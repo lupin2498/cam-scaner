@@ -109,13 +109,13 @@ fun FilterScreen(session: ScanSessionViewModel, onBack: () -> Unit, onSaved: (do
         if (saving) return
         saving = true
         scope.launch {
-            val result = runCatching { session.save(Share.defaultDocumentName(context)) }
-            saving = false
-            result
-                // navigation must happen on the main thread and while the activity is visible;
-                // the coroutine may resume elsewhere after the background save
+            runCatching { session.save(Share.defaultDocumentName(context)) }
+                // Navigation must happen on the main thread and while the activity is visible;
+                // the coroutine may resume elsewhere after the background save. `saving` stays
+                // true so the "no pages left" effect above does not pop the opened document.
                 .onSuccess { id -> lifecycleOwner.lifecycle.withStarted { onSaved(id) } }
                 .onFailure { e ->
+                    saving = false
                     Log.e(TAG, "Saving pages failed", e)
                     // a toast still shows if the page list was already cleared
                     Toast.makeText(
