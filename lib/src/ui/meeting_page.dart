@@ -21,7 +21,7 @@ class MeetingPage extends StatefulWidget {
   State<MeetingPage> createState() => _MeetingPageState();
 }
 
-class _MeetingPageState extends State<MeetingPage> {
+class _MeetingPageState extends State<MeetingPage> with WidgetsBindingObserver {
   MeetingController get c => widget.controller;
   StreamSubscription<String>? _noticeSub;
   Timer? _clock;
@@ -35,6 +35,7 @@ class _MeetingPageState extends State<MeetingPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     c.addListener(_onChange);
     _noticeSub = c.notices.listen((text) {
       if (!mounted) return;
@@ -61,7 +62,13 @@ class _MeetingPageState extends State<MeetingPage> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    c.setAppInBackground(state == AppLifecycleState.paused || state == AppLifecycleState.hidden);
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _clock?.cancel();
     _noticeSub?.cancel();
     c.removeListener(_onChange);

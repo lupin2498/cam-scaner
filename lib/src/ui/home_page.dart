@@ -170,20 +170,28 @@ class _BigAction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Material(
-          color: color,
-          borderRadius: BorderRadius.circular(22),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(22),
-            onTap: onTap,
-            child: SizedBox(width: 76, height: 76, child: Icon(icon, color: Colors.white, size: 38)),
+    return Semantics(
+      button: true,
+      label: label,
+      excludeSemantics: true,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(22),
+        child: Padding(
+          padding: const EdgeInsets.all(6),
+          child: Column(
+            children: [
+              Material(
+                color: color,
+                borderRadius: BorderRadius.circular(22),
+                child: SizedBox(width: 76, height: 76, child: Icon(icon, color: Colors.white, size: 38)),
+              ),
+              const SizedBox(height: 8),
+              Text(label, style: Theme.of(context).textTheme.labelLarge),
+            ],
           ),
         ),
-        const SizedBox(height: 8),
-        Text(label, style: Theme.of(context).textTheme.labelLarge),
-      ],
+      ),
     );
   }
 }

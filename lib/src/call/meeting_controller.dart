@@ -163,6 +163,9 @@ class MeetingController extends ChangeNotifier {
   bool _screenBusy = false;
   bool _renderersReady = false;
   bool _disposed = false;
+  bool _renderersDisposed = false;
+  Future<void>? _cleanupDone;
+  bool _backgrounded = false;
 
   Timer? _statsTimer;
   Timer? _recoveryTimer;
@@ -299,7 +302,7 @@ class MeetingController extends ChangeNotifier {
       hasCam = false;
     }
     camOn = hasCam;
-    if (_camStream != null) localRenderer.srcObject = _camStream;
+    if (_camStream != null) _setSrc(localRenderer, _camStream);
     if (!hasMic && !hasCam) {
       _notice('Không truy cập được micro và camera. Bạn vẫn có thể xem/nghe và chia sẻ màn hình.');
     } else if (!hasMic) {
@@ -553,10 +556,8 @@ class MeetingController extends ChangeNotifier {
   }
 
   Future<void> _clearRemoteMedia() async {
-    if (_renderersReady) {
-      remoteCamRenderer.srcObject = null;
-      remoteScreenRenderer.srcObject = null;
-    }
+    _setSrc(remoteCamRenderer, null);
+    _setSrc(remoteScreenRenderer, null);
     final streams = [_remoteCamStream, _remoteScreenStream];
     _remoteCamStream = null;
     _remoteScreenStream = null;
@@ -580,7 +581,7 @@ class MeetingController extends ChangeNotifier {
         if (gen != _pcGen) return;
         await s.addTrack(track);
         if (gen != _pcGen) return;
-        remoteCamRenderer.srcObject = s;
+        _setSrc(remoteCamRenderer, s);
         if (kIsWeb) remoteCamRenderer.muted = false;
         return;
       }
@@ -595,14 +596,14 @@ class MeetingController extends ChangeNotifier {
         if (gen != _pcGen) return;
         await s.addTrack(track);
         if (gen != _pcGen) return;
-        remoteScreenRenderer.srcObject = s;
+        _setSrc(remoteScreenRenderer, s);
       } else {
         _remoteCamVideoSeen = true;
         final s = _remoteCamStream ??= await createLocalMediaStream('rcam_$gen');
         if (gen != _pcGen) return;
         await s.addTrack(track);
         if (gen != _pcGen) return;
-        remoteCamRenderer.srcObject = s;
+        _setSrc(remoteCamRenderer, s);
         if (kIsWeb) remoteCamRenderer.muted = false;
       }
       _notify();
@@ -863,7 +864,7 @@ class MeetingController extends ChangeNotifier {
     final desc = await pc.getLocalDescription();
     answerCode = ConnectionCode.encode(
         CodeKind.answer, {'s': _sessionId, 'n': localName, 'sdp': desc?.sdp ?? answer.sdp});
-    _setPhase(MeetingPhase.connecting);
+    if (phase == MeetingPhase.preparing) _setPhase(MeetingPhase.connecting);
   }
 
   // =====================================================================
@@ -886,12 +887,11 @@ class MeetingController extends ChangeNotifier {
     }
   }
 
+  /// Trạng thái ICE chỉ dùng để phát hiện mất kết nối. "Đã kết nối" chỉ được xác nhận
+  /// bằng trạng thái PeerConnection (ICE + DTLS) hoặc khi kênh dữ liệu mở: ở chế độ
+  /// Internet, ICE có thể báo connected sớm trước khi chủ phòng nhập mã trả lời.
   void _onIceState(RTCIceConnectionState s) {
     switch (s) {
-      case RTCIceConnectionState.RTCIceConnectionStateConnected:
-      case RTCIceConnectionState.RTCIceConnectionStateCompleted:
-        _onConnected();
-        break;
       case RTCIceConnectionState.RTCIceConnectionStateDisconnected:
         _onDisconnected();
         break;
@@ -1018,7 +1018,10 @@ class MeetingController extends ChangeNotifier {
     _dc = dc;
     dc.onDataChannelState = (s) {
       if (!identical(dc, _dc)) return;
-      if (s == RTCDataChannelState.RTCDataChannelOpen) _sendState();
+      if (s == RTCDataChannelState.RTCDataChannelOpen) {
+        _onConnected();
+        _sendState();
+      }
     };
     dc.onMessage = (msg) {
       if (!identical(dc, _dc) || msg.isBinary) return;
@@ -1040,7 +1043,7 @@ class MeetingController extends ChangeNotifier {
       't': 'state',
       'name': localName,
       'mic': hasMic && micOn,
-      'cam': hasCam && camOn,
+      'cam': hasCam && camOn && !(isIOS && _backgrounded),
       'screen': screenOn && screenLive,
     });
   }
@@ -1357,11 +1360,12 @@ class MeetingController extends ChangeNotifier {
   // =====================================================================
 
   Future<void> _end(String? reason, {bool error = false}) async {
-    if (isEnded) return;
+    if (isEnded) return _cleanupDone ?? Future.value();
     endReason = reason;
     endedWithError = error;
     _setPhase(MeetingPhase.ended);
-    await _cleanup();
+    final f = _cleanupDone = _cleanup().catchError((Object e) => debugPrint('Dọn dẹp lỗi: $e'));
+    await f;
   }
 
   Future<void> _cleanup() async {
@@ -1394,7 +1398,7 @@ class MeetingController extends ChangeNotifier {
     await _clearRemoteMedia();
     screenOn = false;
     await _disposeScreenStream();
-    if (_renderersReady) localRenderer.srcObject = null;
+    _setSrc(localRenderer, null);
     for (final s in [_micStream, _camStream]) {
       if (s == null) continue;
       for (final t in s.getTracks()) {
@@ -1421,12 +1425,17 @@ class MeetingController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    final Future<void> done;
     if (!isEnded) {
       _sendControl({'t': 'bye'});
       _sig?.send({'t': 'bye'}).catchError((_) {});
-      _end(null);
+      done = _end(null);
+    } else {
+      done = _cleanupDone ?? Future.value();
     }
-    Future<void>.delayed(const Duration(milliseconds: 500), () async {
+    // Chỉ giải phóng renderer sau khi dọn dẹp media xong.
+    done.whenComplete(() async {
+      _renderersDisposed = true;
       for (final r in [localRenderer, remoteCamRenderer, remoteScreenRenderer]) {
         try {
           await r.dispose();
@@ -1440,6 +1449,23 @@ class MeetingController extends ChangeNotifier {
   // =====================================================================
   // Tiện ích
   // =====================================================================
+
+  void _setSrc(RTCVideoRenderer r, MediaStream? stream) {
+    if (!_renderersReady || _renderersDisposed) return;
+    try {
+      r.srcObject = stream;
+    } catch (e) {
+      debugPrint('Gắn video lỗi: $e');
+    }
+  }
+
+  /// Ứng dụng vào nền/trở lại. iOS dừng camera khi ở nền nên báo cho bên kia
+  /// hiện ảnh đại diện thay vì khung hình đứng yên.
+  void setAppInBackground(bool background) {
+    if (_backgrounded == background) return;
+    _backgrounded = background;
+    if (isIOS) _sendState();
+  }
 
   void _setPhase(MeetingPhase p) {
     if (phase == p) return;
@@ -1465,8 +1491,7 @@ class MeetingController extends ChangeNotifier {
     return s.length > 160 ? '${s.substring(0, 160)}…' : s;
   }
 
-  /// Kiểm thử: trạng thái tóm tắt.
-  @visibleForTesting
+  /// Trạng thái tóm tắt (gỡ lỗi/kiểm thử).
   Map<String, dynamic> debugSnapshot() => {
         'phase': phase.name,
         'remotePresent': remotePresent,
