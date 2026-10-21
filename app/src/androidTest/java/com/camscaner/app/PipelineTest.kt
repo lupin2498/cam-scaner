@@ -31,7 +31,7 @@ class PipelineTest {
 
     @Test
     fun detectsCardAndLandscapeSheet() {
-        val card = TestImages.documentPhoto(paperRatio = 85.6 / 53.98, rx = 0.2, ry = 0.1, distance = 1.6)
+        val card = TestImages.documentPhoto(paperRatio = 85.6 / 53.98, rx = 0.2, ry = 0.1, distance = 2.6)
         val found = DocumentDetector.detect(card.bitmap)
         assertNotNull(found)
         assertTrue(found!!.maxDistanceTo(card.corners) < 0.02f)

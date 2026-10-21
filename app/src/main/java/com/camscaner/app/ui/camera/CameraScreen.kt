@@ -83,6 +83,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.withStarted
 import coil.compose.AsyncImage
 import com.camscaner.app.R
 import com.camscaner.app.scannerApp
@@ -223,7 +224,7 @@ private fun CameraContent(session: ScanSessionViewModel, onClose: () -> Unit, on
                         if (!batch) session.clear()
                         session.addPhoto(file)
                         capturing = false
-                        if (!batch && session.pages.isNotEmpty()) onDone()
+                        if (!batch && session.pages.isNotEmpty()) lifecycleOwner.lifecycle.withStarted { onDone() }
                     }
                 }
 
@@ -248,7 +249,7 @@ private fun CameraContent(session: ScanSessionViewModel, onClose: () -> Unit, on
         if (uris.isNotEmpty()) {
             scope.launch {
                 session.importUris(uris)
-                if (session.pages.isNotEmpty()) onDone()
+                if (session.pages.isNotEmpty()) lifecycleOwner.lifecycle.withStarted { onDone() }
             }
         }
     }

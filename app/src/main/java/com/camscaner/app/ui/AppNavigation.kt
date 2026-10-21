@@ -5,7 +5,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.withStarted
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -48,11 +50,14 @@ fun AppNavigation(sharedUris: List<Uri>, onSharedConsumed: () -> Unit) {
     val session: ScanSessionViewModel = viewModel()
     val scope = rememberCoroutineScope()
 
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+
     fun importAndCrop(docId: String?, returnRoute: String?, uris: List<Uri>) {
         scope.launch {
             session.start(docId, returnRoute)
             session.importUris(uris)
-            if (session.pages.isNotEmpty()) nav.navigate(Routes.CROP)
+            // the import can outlive the screen; only navigate while the activity is visible
+            if (session.pages.isNotEmpty()) lifecycle.withStarted { nav.navigate(Routes.CROP) }
         }
     }
 

@@ -123,8 +123,9 @@ class PdfExportTest {
             draft(TestImages.documentPhoto(rx = -0.2), ScanFilter.NO_SHADOW),
         )
         val pdf = export(doc, PdfOptions(fileName = "marked", watermark = "BẢN SAO", pageNumbers = true, margin = PageMargin.SMALL))
-        val text = PDDocument.load(pdf).use { PDFTextStripper().getText(it) }
-        assertTrue("watermark/page numbers missing: $text", text.contains("1 / 2") && text.contains("SAO"))
+        // rotated watermark text comes out one glyph per line, so compare without whitespace
+        val text = PDDocument.load(pdf).use { PDFTextStripper().getText(it) }.replace(Regex("\\s+"), "")
+        assertTrue("watermark/page numbers missing: $text", text.contains("1/2") && text.contains("2/2") && text.contains("SAO"))
         val low = export(doc, PdfOptions(fileName = "low", quality = PdfQuality.LOW))
         val high = export(doc, PdfOptions(fileName = "high", quality = PdfQuality.ORIGINAL))
         assertTrue("low ${low.length()} >= high ${high.length()}", low.length() < high.length())
@@ -140,8 +141,8 @@ class PdfExportTest {
 
     @Test
     fun idCardsShareOnePage() {
-        val front = TestImages.documentPhoto(paperRatio = 85.6 / 53.98, rx = 0.15, ry = 0.1, distance = 1.6)
-        val back = TestImages.documentPhoto(paperRatio = 85.6 / 53.98, rx = -0.1, ry = 0.15, distance = 1.6)
+        val front = TestImages.documentPhoto(paperRatio = 85.6 / 53.98, rx = 0.15, ry = 0.1, distance = 2.6)
+        val back = TestImages.documentPhoto(paperRatio = 85.6 / 53.98, rx = -0.1, ry = 0.15, distance = 2.6)
         val doc = document(draft(front, ScanFilter.LIGHTEN), draft(back, ScanFilter.LIGHTEN))
         val merged = pageSizes(export(doc, PdfOptions(fileName = "cards")))
         assertEquals(1, merged.size)

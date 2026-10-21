@@ -73,11 +73,12 @@ jobs:
           script: |
             adb shell rm -rf /sdcard/Pictures/camscaner || true
             ./gradlew --no-daemon -PwithX86 connectedDebugAndroidTest > connected.log 2>&1; echo $? > exit_code.txt
-            grep -E "Tests on|FAILED|Exception|Error|expected|assert" connected.log | head -n 120 || true
-            tail -n 40 connected.log
+            grep -E "Tests on|FAILED" connected.log | head -n 60 || true
+            grep -A 30 "FAILED" connected.log | head -n 400 || true
             adb pull /sdcard/Pictures/camscaner screenshots || true
             adb logcat -d > logcat.txt || true
-            grep -E "FATAL EXCEPTION|AndroidRuntime|camscaner" logcat.txt | tail -n 80 || true
+            grep -E "CamScanerTest" logcat.txt | head -n 300 || true
+            grep -A 40 "FATAL EXCEPTION" logcat.txt | head -n 200 || true
             exit $(cat exit_code.txt)
 
       - name: Commit screenshots

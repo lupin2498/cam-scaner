@@ -2,7 +2,11 @@ package com.camscaner.app
 
 import android.Manifest
 import android.content.Intent
+import android.util.Log
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.isRoot
+import androidx.compose.ui.test.printToString
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
@@ -62,12 +66,28 @@ class UiFlowTest {
     }
 
     private fun ComposeTestRule.waitText(text: String, timeout: Long = 20_000) =
-        waitUntilAtLeastOneExists(hasText(text, substring = true), timeout)
+        waitOrDump(hasText(text, substring = true), "text '$text'", timeout)
 
     private fun ComposeTestRule.waitDescription(text: String, timeout: Long = 20_000) =
-        waitUntilAtLeastOneExists(hasContentDescription(text), timeout)
+        waitOrDump(hasContentDescription(text), "description '$text'", timeout)
+
+    /** Waits for a node; on timeout saves a screenshot and the semantics tree for the CI log. */
+    private fun ComposeTestRule.waitOrDump(matcher: SemanticsMatcher, what: String, timeout: Long) {
+        try {
+            waitUntilAtLeastOneExists(matcher, timeout)
+        } catch (e: Throwable) {
+            TestImages.screenshot("fail_" + what.filter { it.isLetterOrDigit() }.take(24))
+            val tree = runCatching { onAllNodes(isRoot()).printToString() }.getOrElse { "tree unavailable: $it" }
+            Log.e(TAG, "Timed out waiting for $what\n$tree")
+            throw AssertionError("Timed out waiting for $what", e)
+        }
+    }
 
     private fun str(id: Int, vararg args: Any) = context.getString(id, *args)
+
+    private companion object {
+        const val TAG = "CamScanerTest"
+    }
 
     @Test
     fun homeShowsEmptyStateAndSettings() {
