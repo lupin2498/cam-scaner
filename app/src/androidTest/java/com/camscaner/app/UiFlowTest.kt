@@ -16,6 +16,8 @@ import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -229,5 +231,88 @@ class UiFlowTest {
         compose.onNode(hasSetTextAction()).performTextReplacement("Ten moi")
         compose.onNodeWithText(str(R.string.save)).performClick()
         compose.waitUntil(10_000) { app.documents.get(docId)?.name == "Ten moi" }
+    }
+
+    private fun seedDocument(name: String, pages: Int = 1): String {
+        val drafts = (0 until pages).map { i ->
+            val scene = TestImages.documentPhoto(rx = 0.1 * i, ry = 0.05)
+            val file = TestImages.save(scene.bitmap, File(context.cacheDir, "scan/seed_${name.hashCode()}_$i.jpg"))
+            com.camscaner.app.data.DraftPage(
+                id = "seed$i", originalFile = file, width = scene.bitmap.width, height = scene.bitmap.height,
+                detected = scene.corners, corners = scene.corners,
+            )
+        }
+        return runBlocking { app.documents.saveDrafts(null, name, drafts) }
+    }
+
+    /** Page viewer → re-crop → filter → save returns to the viewer with the page updated. */
+    @Test
+    fun recropAndRefilterExistingPage() {
+        val docId = seedDocument("Sua lai trang")
+        val before = app.documents.get(docId)!!.pages[0]
+        scenario = ActivityScenario.launch(MainActivity::class.java)
+        compose.waitText("Sua lai trang")
+        compose.onNodeWithText("Sua lai trang").performClick()
+        compose.waitText(str(R.string.doc_reorder_hint))
+        compose.onNodeWithText("1").performClick()
+        compose.waitText(str(R.string.page_recrop))
+        compose.onNodeWithText(str(R.string.page_recrop)).performClick()
+
+        compose.waitText(str(R.string.crop_full))
+        compose.onNodeWithText(str(R.string.crop_full)).performClick()
+        compose.onAllNodesWithText(str(R.string.next)).onFirst().performClick()
+        compose.waitText(str(R.string.filter_original))
+        compose.onNodeWithText(str(R.string.filter_gray)).performClick()
+        Thread.sleep(1000)
+        compose.onNodeWithContentDescription(str(R.string.save)).performClick()
+
+        // back on the page viewer, not a new document
+        compose.waitText(str(R.string.page_ocr), 30_000)
+        TestImages.screenshot("15_after_recrop")
+        val docs = app.documents.documents.value
+        assertEquals(1, docs.size)
+        val after = docs[0].pages.single()
+        assertEquals(before.id, after.id)
+        assertEquals(null, after.corners)
+        assertEquals(com.camscaner.app.scanner.ScanFilter.GRAY, after.filter)
+        assertTrue(after.updatedAt > before.updatedAt)
+    }
+
+    @Test
+    fun deletePageFromViewer() {
+        val docId = seedDocument("Xoa trang", pages = 2)
+        scenario = ActivityScenario.launch(MainActivity::class.java)
+        compose.waitText("Xoa trang")
+        compose.onNodeWithText("Xoa trang").performClick()
+        compose.waitText(str(R.string.doc_reorder_hint))
+        compose.onNodeWithText("2").performClick()
+        compose.waitText(str(R.string.page_ocr))
+        compose.onNodeWithText(str(R.string.delete)).performClick()
+        compose.waitText(str(R.string.page_delete_title))
+        compose.onNode(hasText(str(R.string.delete)) and hasAnyAncestor(isDialog())).performClick()
+        compose.waitUntil(10_000) { app.documents.get(docId)!!.pages.size == 1 }
+    }
+
+    /** "Add with camera" from a document appends the capture to that document. */
+    @Test
+    fun addPageWithCameraToExistingDocument() {
+        val docId = seedDocument("Them trang")
+        scenario = ActivityScenario.launch(MainActivity::class.java)
+        compose.waitText("Them trang")
+        compose.onNodeWithText("Them trang").performClick()
+        compose.waitText(str(R.string.doc_add_camera))
+        compose.onNodeWithText(str(R.string.doc_add_camera)).performClick()
+        compose.waitDescription(str(R.string.camera_capture))
+        Thread.sleep(2500)
+        compose.onNodeWithContentDescription(str(R.string.camera_capture)).performClick()
+        compose.waitText(str(R.string.crop_auto), 30_000)
+        compose.onAllNodesWithText(str(R.string.next)).onFirst().performClick()
+        compose.waitDescription(str(R.string.save))
+        Thread.sleep(1000)
+        compose.onNodeWithContentDescription(str(R.string.save)).performClick()
+        compose.waitUntil(30_000) { app.documents.get(docId)?.pages?.size == 2 }
+        compose.waitText(str(R.string.doc_reorder_hint))
+        TestImages.screenshot("16_two_pages")
+        assertEquals(1, app.documents.documents.value.size)
     }
 }
