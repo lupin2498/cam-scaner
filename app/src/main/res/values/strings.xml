@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Cam Scaner</string>
+
+    <!-- Chung -->
+    <string name="ok">OK</string>
+    <string name="cancel">Hủy</string>
+    <string name="save">Lưu</string>
+    <string name="delete">Xóa</string>
+    <string name="rename">Đổi tên</string>
+    <string name="share">Chia sẻ</string>
+    <string name="open">Mở</string>
+    <string name="back">Quay lại</string>
+    <string name="next">Tiếp</string>
+    <string name="done">Xong</string>
+    <string name="close">Đóng</string>
+    <string name="copy">Sao chép</string>
+    <string name="processing">Đang xử lý…</string>
+    <string name="error_generic">Đã xảy ra lỗi: %1$s</string>
+    <string name="pages_count">%1$d trang</string>
+
+    <!-- Trang chủ -->
+    <string name="home_search_hint">Tìm tài liệu</string>
+    <string name="home_empty_title">Chưa có tài liệu nào</string>
+    <string name="home_empty_message">Nhấn nút máy ảnh để quét tài liệu đầu tiên hoặc nhập ảnh từ thư viện.</string>
+    <string name="home_scan">Quét</string>
+    <string name="home_import">Nhập ảnh</string>
+    <string name="home_settings">Cài đặt</string>
+    <string name="home_quick_pdf">Xuất PDF nhanh</string>
+    <string name="home_delete_title">Xóa tài liệu?</string>
+    <string name="home_delete_message">Tài liệu \"%1$s\" và tất cả các trang sẽ bị xóa vĩnh viễn.</string>
+    <string name="default_doc_name">Tài liệu %1$s</string>
+    <string name="rename_title">Đổi tên tài liệu</string>
+    <string name="rename_hint">Tên tài liệu</string>
+
+    <!-- Máy ảnh -->
+    <string name="camera_permission_title">Cần quyền máy ảnh</string>
+    <string name="camera_permission_message">Ứng dụng cần quyền truy cập máy ảnh để quét tài liệu.</string>
+    <string name="camera_permission_grant">Cấp quyền</string>
+    <string name="camera_mode_single">Một trang</string>
+    <string name="camera_mode_batch">Nhiều trang</string>
+    <string name="camera_auto_capture">Tự động chụp</string>
+    <string name="camera_flash">Đèn flash</string>
+    <string name="camera_grid">Lưới</string>
+    <string name="camera_hint_searching">Đưa tài liệu vào khung hình</string>
+    <string name="camera_hint_found">Đã nhận diện tài liệu</string>
+    <string name="camera_hint_hold">Giữ yên máy…</string>
+    <string name="camera_capture">Chụp</string>
+    <string name="camera_capture_failed">Chụp ảnh thất bại</string>
+
+    <!-- Cắt ảnh -->
+    <string name="crop_title">Căn chỉnh mép giấy</string>
+    <string name="crop_auto">Tự động</string>
+    <string name="crop_full">Toàn ảnh</string>
+    <string name="crop_rotate_left">Xoay trái</string>
+    <string name="crop_rotate_right">Xoay phải</string>
+    <string name="crop_invalid">Vùng chọn không hợp lệ, hãy kéo các góc thành hình tứ giác lồi</string>
+    <string name="crop_page_of">Trang %1$d/%2$d</string>
+    <string name="crop_delete_page">Bỏ trang</string>
+
+    <!-- Bộ lọc -->
+    <string name="filter_title">Làm đẹp ảnh</string>
+    <string name="filter_original">Gốc</string>
+    <string name="filter_lighten">Làm sáng</string>
+    <string name="filter_magic">Tăng màu</string>
+    <string name="filter_no_shadow">Xóa bóng</string>
+    <string name="filter_gray">Thang xám</string>
+    <string name="filter_bw">Đen trắng</string>
+    <string name="filter_bw_soft">Bản sao</string>
+    <string name="filter_apply_all">Áp dụng cho tất cả trang</string>
+    <string name="filter_applied_all">Đã áp dụng cho tất cả trang</string>
+    <string name="filter_adjust">Điều chỉnh</string>
+    <string name="filter_brightness">Độ sáng</string>
+    <string name="filter_contrast">Tương phản</string>
+    <string name="filter_sharpness">Độ nét</string>
+    <string name="filter_reset">Đặt lại</string>
+    <string name="filter_saving">Đang lưu trang…</string>
+
+    <!-- Tài liệu -->
+    <string name="doc_add_camera">Chụp thêm</string>
+    <string name="doc_add_gallery">Thêm ảnh</string>
+    <string name="doc_export_pdf">Xuất PDF</string>
+    <string name="doc_share_images">Chia sẻ ảnh JPG</string>
+    <string name="doc_delete">Xóa tài liệu</string>
+    <string name="doc_reorder_hint">Nhấn giữ và kéo để sắp xếp lại trang</string>
+    <string name="doc_empty">Tài liệu chưa có trang nào</string>
+
+    <!-- Xem trang -->
+    <string name="page_recrop">Cắt lại</string>
+    <string name="page_filter">Bộ lọc</string>
+    <string name="page_rotate">Xoay</string>
+    <string name="page_ocr">Nhận dạng chữ</string>
+    <string name="page_delete_title">Xóa trang này?</string>
+
+    <!-- OCR -->
+    <string name="ocr_title">Nhận dạng văn bản (OCR)</string>
+    <string name="ocr_running">Đang nhận dạng chữ…</string>
+    <string name="ocr_empty">Không tìm thấy chữ trong trang này</string>
+    <string name="ocr_copied">Đã sao chép văn bản</string>
+
+    <!-- Xuất PDF -->
+    <string name="export_title">Xuất PDF</string>
+    <string name="export_file_name">Tên tệp</string>
+    <string name="export_paper_size">Khổ giấy</string>
+    <string name="export_orientation">Hướng trang</string>
+    <string name="export_margin">Lề trang</string>
+    <string name="export_quality">Chất lượng</string>
+    <string name="export_options">Tùy chọn nâng cao</string>
+    <string name="export_ocr_layer">PDF tìm kiếm được (lớp chữ OCR)</string>
+    <string name="export_ocr_layer_desc">Có thể tìm kiếm, bôi đen và sao chép chữ trong PDF</string>
+    <string name="export_id_card">Ghép 2 mặt thẻ (CCCD) vào 1 trang A4</string>
+    <string name="export_id_card_desc">Tự nhận diện ảnh có tỉ lệ thẻ và in đúng kích thước thật</string>
+    <string name="export_page_numbers">Đánh số trang</string>
+    <string name="export_password">Đặt mật khẩu PDF</string>
+    <string name="export_password_hint">Mật khẩu</string>
+    <string name="export_watermark">Thêm hình mờ (watermark)</string>
+    <string name="export_watermark_hint">Nội dung hình mờ</string>
+    <string name="export_start">Tạo PDF</string>
+    <string name="export_progress">Đang tạo PDF… %1$d%%</string>
+    <string name="export_done">Đã tạo PDF (%1$s)</string>
+    <string name="export_save_device">Lưu vào máy</string>
+    <string name="export_saved">Đã lưu tệp</string>
+    <string name="export_no_viewer">Không tìm thấy ứng dụng đọc PDF</string>
+    <string name="export_estimated">%1$d trang · %2$s</string>
+
+    <string name="paper_auto">Tự động</string>
+    <string name="paper_auto_desc">Tự nhận khổ A4/Letter/Legal/thẻ theo tỉ lệ trang</string>
+    <string name="paper_fit_image">Theo ảnh</string>
+    <string name="paper_a3">A3</string>
+    <string name="paper_a4">A4</string>
+    <string name="paper_a5">A5</string>
+    <string name="paper_b5">B5</string>
+    <string name="paper_letter">Letter</string>
+    <string name="paper_legal">Legal</string>
+
+    <string name="orientation_auto">Tự động</string>
+    <string name="orientation_portrait">Dọc</string>
+    <string name="orientation_landscape">Ngang</string>
+
+    <string name="margin_none">Không</string>
+    <string name="margin_small">Nhỏ</string>
+    <string name="margin_medium">Vừa</string>
+    <string name="margin_large">Lớn</string>
+
+    <string name="quality_low">Nhẹ</string>
+    <string name="quality_medium">Vừa</string>
+    <string name="quality_high">Cao</string>
+    <string name="quality_original">HD gốc</string>
+
+    <!-- Cài đặt -->
+    <string name="settings_title">Cài đặt</string>
+    <string name="settings_default_filter">Bộ lọc mặc định cho ảnh quét</string>
+    <string name="settings_auto_capture">Tự động chụp khi nhận diện được tài liệu</string>
+    <string name="settings_grid">Hiện lưới khi chụp</string>
+    <string name="settings_auto_crop">Tự động cắt mép giấy</string>
+    <string name="settings_auto_crop_desc">Tắt để luôn giữ toàn bộ ảnh</string>
+    <string name="settings_about">Phiên bản %1$s · Không quảng cáo · Không hình mờ</string>
+</resources>
