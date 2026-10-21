@@ -1,6 +1,9 @@
 package com.camscaner.app.ui.components
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -27,13 +30,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.camscaner.app.R
@@ -67,13 +70,25 @@ fun FileImage(
     AsyncImage(model = request, contentDescription = contentDescription, modifier = modifier, contentScale = contentScale)
 }
 
+/**
+ * Blocking progress indicator drawn over the current screen. It is part of the layout rather than
+ * a dialog window, so it disappears cleanly when the screen navigates away while it is shown.
+ */
 @Composable
 fun ProgressDialog(message: String, progress: Float? = null) {
-    Dialog(
-        onDismissRequest = {},
-        properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.45f))
+            // swallow touches so the screen below cannot be used meanwhile
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) awaitPointerEvent().changes.forEach { it.consume() }
+                }
+            },
+        contentAlignment = Alignment.Center,
     ) {
-        Surface(shape = MaterialTheme.shapes.large, tonalElevation = 6.dp) {
+        Surface(shape = MaterialTheme.shapes.large, tonalElevation = 6.dp, modifier = Modifier.padding(32.dp)) {
             Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 3.dp)
