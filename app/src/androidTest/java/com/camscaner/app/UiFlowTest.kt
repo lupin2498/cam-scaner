@@ -8,6 +8,8 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.printToString
 import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasScrollToNodeAction
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.ComposeTestRule
@@ -79,7 +81,7 @@ class UiFlowTest {
             waitUntilAtLeastOneExists(matcher, timeout)
         } catch (e: Throwable) {
             TestImages.screenshot("fail_" + what.filter { it.isLetterOrDigit() }.take(24))
-            val tree = runCatching { onAllNodes(isRoot()).printToString() }.getOrElse { "tree unavailable: $it" }
+            val tree = runCatching { onAllNodes(isRoot()).printToString(Int.MAX_VALUE) }.getOrElse { "tree unavailable: $it" }
             Log.e(TAG, "Timed out waiting for $what\n$tree")
             throw AssertionError("Timed out waiting for $what", e)
         }
@@ -123,9 +125,11 @@ class UiFlowTest {
         compose.onAllNodesWithText(str(R.string.next)).onFirst().performClick()
 
         compose.waitText(str(R.string.filter_title))
-        compose.waitText(str(R.string.filter_bw))
+        compose.waitText(str(R.string.filter_original))
         Thread.sleep(1500)
         TestImages.screenshot("04_filter_magic")
+        // the filter strip scrolls horizontally; B&W is past the screen edge on a phone
+        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText(str(R.string.filter_bw)))
         compose.onNodeWithText(str(R.string.filter_bw)).performClick()
         Thread.sleep(1500)
         TestImages.screenshot("05_filter_bw")

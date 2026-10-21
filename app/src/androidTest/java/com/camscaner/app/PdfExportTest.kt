@@ -146,7 +146,8 @@ class PdfExportTest {
         val doc = document(draft(front, ScanFilter.LIGHTEN), draft(back, ScanFilter.LIGHTEN))
         val merged = pageSizes(export(doc, PdfOptions(fileName = "cards")))
         assertEquals(1, merged.size)
-        assertEquals(595 to 842, merged[0])
+        // PdfRenderer truncates the A4 size 595.28 x 841.89 pt
+        assertEquals(595 to 841, merged[0])
         val separate = pageSizes(export(doc, PdfOptions(fileName = "cards2", mergeIdCards = false)))
         assertEquals(2, separate.size)
     }
