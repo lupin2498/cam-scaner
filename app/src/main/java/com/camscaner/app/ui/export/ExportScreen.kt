@@ -97,6 +97,7 @@ class ExportViewModel(app: Application, handle: SavedStateHandle) : AndroidViewM
         repository.observe(docId).stateIn(viewModelScope, SharingStarted.Eagerly, repository.get(docId))
 
     var options by mutableStateOf(scannerApp.settings.pdfOptions(repository.get(docId)?.name ?: "scan"))
+        private set
     var progress by mutableStateOf<Float?>(null)
         private set
     var result by mutableStateOf<File?>(null)
@@ -104,6 +105,12 @@ class ExportViewModel(app: Application, handle: SavedStateHandle) : AndroidViewM
     var error by mutableStateOf<String?>(null)
 
     fun thumb(pageId: String) = repository.thumbFile(docId, pageId)
+
+    /** Any change makes the previously exported file stale. */
+    fun updateOptions(transform: (PdfOptions) -> PdfOptions) {
+        options = transform(options)
+        result = null
+    }
 
     fun export() {
         val doc = document.value ?: return
@@ -133,9 +140,7 @@ fun ExportScreen(onBack: () -> Unit) {
     val document by vm.document.collectAsState()
     val doc = document ?: return
     val o = vm.options
-    fun update(t: (PdfOptions) -> PdfOptions) {
-        vm.options = t(vm.options)
-    }
+    fun update(t: (PdfOptions) -> PdfOptions) = vm.updateOptions(t)
 
     val saveLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
         val file = vm.result

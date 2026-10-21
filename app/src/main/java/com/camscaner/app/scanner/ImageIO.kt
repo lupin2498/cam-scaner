@@ -16,6 +16,8 @@ object ImageIO {
     /** Originals are stored upright, without EXIF rotation, and at most this size. */
     const val MAX_ORIGINAL = 4096
 
+    private const val MAX_DECODE_PIXELS = 24_000_000L
+
     fun copyUri(context: Context, uri: Uri, target: File): File {
         target.parentFile?.mkdirs()
         context.contentResolver.openInputStream(uri).use { input ->
@@ -57,8 +59,12 @@ object ImageIO {
     fun decodeSampled(file: File, maxDim: Int): Bitmap? {
         val (w, h) = readSize(file)
         if (w <= 0 || h <= 0) return null
+        // Largest power-of-two subsampling that keeps (almost) the target resolution, but never
+        // decode more than ~24 MP: a 50 MP photo would need ~200 MB as a bitmap.
         var sample = 1
-        while (max(w, h) / (sample * 2) >= maxDim) sample *= 2
+        while (max(w, h) / (sample * 2) >= maxDim * 9 / 10 ||
+            (w / sample).toLong() * (h / sample) > MAX_DECODE_PIXELS
+        ) sample *= 2
         val opts = BitmapFactory.Options().apply {
             inSampleSize = sample
             inPreferredConfig = Bitmap.Config.ARGB_8888

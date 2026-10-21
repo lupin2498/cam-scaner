@@ -158,7 +158,8 @@ private fun CameraContent(session: ScanSessionViewModel, onClose: () -> Unit, on
             .setResolutionSelector(
                 ResolutionSelector.Builder()
                     .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
-                    .setResolutionStrategy(ResolutionStrategy.HIGHEST_AVAILABLE_STRATEGY)
+                    // ~12 MP is plenty for A4 at 300 dpi and keeps capture and processing fast
+                    .setResolutionStrategy(ResolutionStrategy(Size(4032, 3024), ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER))
                     .build()
             )
             .build()
