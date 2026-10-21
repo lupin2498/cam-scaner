@@ -38,8 +38,12 @@ jobs:
   device-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-java@v4
         with:
@@ -75,6 +79,29 @@ jobs:
             adb logcat -d > logcat.txt || true
             grep -E "FATAL EXCEPTION|AndroidRuntime|camscaner" logcat.txt | tail -n 80 || true
             exit $(cat exit_code.txt)
+
+      - name: Commit screenshots
+        if: always() && github.event_name == 'push' && contains(github.event.head_commit.message, '[screens]')
+        run: |
+          pip install --quiet pillow
+          rm -rf docs/screenshots && mkdir -p docs/screenshots
+          python3 - <<'PY'
+          import glob, os
+          from PIL import Image
+          for p in sorted(glob.glob('screenshots/**/*.png', recursive=True)):
+              im = Image.open(p).convert('RGB')
+              w = 360
+              im = im.resize((w, int(im.height * w / im.width)), Image.LANCZOS)
+              im.save('docs/screenshots/' + os.path.basename(p)[:-4] + '.jpg', 'JPEG', quality=72)
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A docs/screenshots
+          git commit -m "Update emulator screenshots [skip ci]" || exit 0
+          for i in 1 2 3; do
+            git pull --rebase origin "${GITHUB_REF_NAME}" && git push origin "HEAD:${GITHUB_REF_NAME}" && break
+            sleep 5
+          done
 
       - uses: actions/upload-artifact@v4
         if: always()
