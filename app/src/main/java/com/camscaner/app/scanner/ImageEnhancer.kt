@@ -146,7 +146,8 @@ object ImageEnhancer {
         // which a plain dilation would turn into a dark line along every shadow boundary
         val k = odd(max(3, longSide / 45)).toDouble()
         val medianSize = odd(max(5, longSide / 25))
-        val se = Imgproc.getStructuringElement(Imgproc.MORPH_ELLIPSE, Size(k, k)).track()
+        // a square element is separable, several times faster than an ellipse of the same size
+        val se = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(k, k)).track()
 
         val local = split(small).map { c ->
             val d = mat()

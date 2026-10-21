@@ -190,8 +190,9 @@ private fun CameraContent(session: ScanSessionViewModel, onClose: () -> Unit, on
             try {
                 p.unbindAll()
                 cameraRef = p.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, preview, imageCapture, analysis)
+                Log.i(TAG, "Camera bound")
             } catch (e: Exception) {
-                Log.e("CameraScreen", "Camera binding failed", e)
+                Log.e(TAG, "Camera binding failed", e)
             }
         }, ContextCompat.getMainExecutor(context))
         onDispose {
@@ -210,6 +211,7 @@ private fun CameraContent(session: ScanSessionViewModel, onClose: () -> Unit, on
             flashOverlay.animateTo(0f, tween(300))
         }
         val file = File(context.cacheDir, "scan/raw_${System.currentTimeMillis()}.jpg").apply { parentFile?.mkdirs() }
+        Log.i(TAG, "Capturing to ${file.name}")
         imageCapture.flashMode = when (flash) {
             FlashState.AUTO -> ImageCapture.FLASH_MODE_AUTO
             FlashState.ON -> ImageCapture.FLASH_MODE_ON
@@ -220,6 +222,7 @@ private fun CameraContent(session: ScanSessionViewModel, onClose: () -> Unit, on
             ContextCompat.getMainExecutor(context),
             object : ImageCapture.OnImageSavedCallback {
                 override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
+                    Log.i(TAG, "Photo saved (${file.length()} bytes)")
                     scope.launch {
                         val batch = settings.batchMode
                         if (!batch) session.clear()
@@ -230,6 +233,7 @@ private fun CameraContent(session: ScanSessionViewModel, onClose: () -> Unit, on
                 }
 
                 override fun onError(exception: ImageCaptureException) {
+                    Log.e(TAG, "Capture failed", exception)
                     capturing = false
                     Toast.makeText(context, R.string.camera_capture_failed, Toast.LENGTH_SHORT).show()
                 }
@@ -433,3 +437,5 @@ private fun ShutterButton(label: String, progress: Float, busy: Boolean, onClick
         }
     }
 }
+
+private const val TAG = "CameraScreen"

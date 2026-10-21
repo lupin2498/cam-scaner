@@ -79,7 +79,7 @@ jobs:
             grep -A 30 "FAILED" connected.log | head -n 400 || true
             adb pull /sdcard/Pictures/camscaner screenshots || true
             adb logcat -d > logcat.txt || true
-            grep -E "CamScanerTest|FilterScreen|AppNavigation|AndroidRuntime" logcat.txt | head -n 300 || true
+            grep -E "CamScanerTest|FilterScreen|AppNavigation|CameraScreen|AndroidRuntime" logcat.txt | head -n 300 || true
             grep -A 40 "FATAL EXCEPTION" logcat.txt | head -n 200 || true
             exit $(cat exit_code.txt)
 
