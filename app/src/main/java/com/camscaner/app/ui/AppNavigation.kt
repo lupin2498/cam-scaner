@@ -1,6 +1,7 @@
 package com.camscaner.app.ui
 
 import android.net.Uri
+import android.util.Log
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
@@ -160,6 +161,7 @@ fun AppNavigation(sharedUris: List<Uri>, onSharedConsumed: () -> Unit) {
 /** After saving: go back to where the scan started, or open the new document. */
 private fun finishScan(nav: NavHostController, session: ScanSessionViewModel, docId: String) {
     val back = session.returnRoute
+    Log.d("AppNavigation", "Scan saved into $docId, returning to ${back ?: "new document"}")
     if (back == null || !nav.popBackStack(back, inclusive = false)) {
         nav.navigate(Routes.document(docId)) {
             popUpTo(Routes.HOME)

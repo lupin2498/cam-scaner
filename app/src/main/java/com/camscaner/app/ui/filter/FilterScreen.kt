@@ -1,5 +1,7 @@
 package com.camscaner.app.ui.filter
 
+import android.util.Log
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Image
@@ -82,7 +84,13 @@ fun FilterScreen(session: ScanSessionViewModel, onBack: () -> Unit, onSaved: (do
     LaunchedEffect(pages.size) {
         if (pages.isEmpty() && !saving) onBack()
     }
-    if (pages.isEmpty()) return
+    if (pages.isEmpty()) {
+        // pages are cleared right after saving, while navigation to the document happens
+        Box(Modifier.fillMaxSize().background(Color(0xFF101312)), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator()
+        }
+        return
+    }
     val index = session.currentIndex.coerceIn(0, pages.lastIndex)
     val page = pages[index]
 
@@ -98,14 +106,19 @@ fun FilterScreen(session: ScanSessionViewModel, onBack: () -> Unit, onSaved: (do
         if (saving) return
         saving = true
         scope.launch {
-            try {
-                val id = session.save(Share.defaultDocumentName(context))
-                onSaved(id)
-            } catch (e: Exception) {
-                snackbar.showSnackbar(context.getString(R.string.error_generic, e.message ?: e.javaClass.simpleName))
-            } finally {
-                saving = false
-            }
+            val result = runCatching { session.save(Share.defaultDocumentName(context)) }
+            saving = false
+            result
+                .onSuccess { id -> onSaved(id) }
+                .onFailure { e ->
+                    Log.e(TAG, "Saving pages failed", e)
+                    // a toast still shows if the page list was already cleared
+                    Toast.makeText(
+                        context,
+                        context.getString(R.string.error_generic, e.message ?: e.javaClass.simpleName),
+                        Toast.LENGTH_LONG,
+                    ).show()
+                }
         }
     }
 
@@ -251,3 +264,5 @@ private fun AdjustSlider(label: String, value: Float, range: ClosedFloatingPoint
         Slider(value = value, onValueChange = onChange, valueRange = range, modifier = Modifier.weight(1f))
     }
 }
+
+private const val TAG = "FilterScreen"

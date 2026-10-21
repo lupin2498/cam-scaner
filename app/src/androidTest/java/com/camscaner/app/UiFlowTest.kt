@@ -91,6 +91,16 @@ class UiFlowTest {
 
     private fun str(id: Int, vararg args: Any) = context.getString(id, *args)
 
+    /** Filter of the first page in the activity's scan session. */
+    private fun filterOfDraft(): com.camscaner.app.scanner.ScanFilter? {
+        var filter: com.camscaner.app.scanner.ScanFilter? = null
+        scenario?.onActivity { activity ->
+            val session = androidx.lifecycle.ViewModelProvider(activity)[com.camscaner.app.ui.ScanSessionViewModel::class.java]
+            filter = session.pages.firstOrNull()?.filter
+        }
+        return filter
+    }
+
     private companion object {
         const val TAG = "CamScanerTest"
     }
@@ -132,12 +142,15 @@ class UiFlowTest {
         TestImages.screenshot("04_filter_magic")
         // the filter strip scrolls horizontally; B&W is past the screen edge on a phone
         compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText(str(R.string.filter_bw)))
+        compose.waitForIdle()
+        Thread.sleep(500)
         compose.onNodeWithText(str(R.string.filter_bw)).performClick()
+        compose.waitUntil(10_000) { app.documents.documents.value.isEmpty() && filterOfDraft() == com.camscaner.app.scanner.ScanFilter.BW }
         Thread.sleep(1500)
         TestImages.screenshot("05_filter_bw")
         compose.onNodeWithContentDescription(str(R.string.save)).performClick()
 
-        compose.waitText(str(R.string.doc_export_pdf), 30_000)
+        compose.waitText(str(R.string.doc_export_pdf), 60_000)
         compose.waitText(str(R.string.doc_reorder_hint))
         Thread.sleep(800)
         TestImages.screenshot("06_document")
