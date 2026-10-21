@@ -49,6 +49,8 @@ class UiFlowTest {
 
     @Before
     fun clean() = runBlocking {
+        // a cold emulator may show "launcher isn't responding" on top of the app
+        TestImages.shell("am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS")
         waitForRepository()
         app.documents.documents.value.forEach { app.documents.delete(it.id) }
         app.settings.batchMode = false
