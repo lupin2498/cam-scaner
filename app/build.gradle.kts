@@ -12,8 +12,10 @@ android {
         applicationId = "com.camscaner.app"
         minSdk = 24
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        // CI builds get increasing version codes so a new APK installs over the old one.
+        val build = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
+        versionCode = build
+        versionName = "1.0.$build"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         ndk {
@@ -23,8 +25,20 @@ android {
         }
     }
 
+    signingConfigs {
+        // Shared, non-secret debug key so every CI build can be installed over the previous one.
+        // Use your own release key (e.g. via signing secrets) before publishing on Google Play.
+        getByName("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
         release {
+            signingConfig = signingConfigs.getByName("debug")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(

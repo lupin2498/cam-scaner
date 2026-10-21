@@ -4,6 +4,11 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish the APKs as a GitHub release"
+        type: boolean
+        default: false
 
 jobs:
   build:
@@ -81,3 +86,33 @@ jobs:
             connected.log
             app/build/reports/androidTests/
             app/build/outputs/androidTest-results/
+
+  release:
+    if: github.event_name == 'workflow_dispatch' && inputs.publish
+    needs: [build, device-tests]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: cam-scaner-apk
+          path: apk
+
+      - name: Collect APKs
+        run: |
+          mkdir dist
+          cp apk/release/app-release.apk "dist/CamScaner-1.0.${{ github.run_number }}.apk"
+          cp apk/debug/app-debug.apk "dist/CamScaner-1.0.${{ github.run_number }}-debug.apk"
+          ls -la dist
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: Cam Scaner 1.0.${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          files: dist/*.apk
+          body: |
+            APK quét tài liệu ra PDF.
+            - `CamScaner-1.0.${{ github.run_number }}.apk`: bản chính thức (đã tối ưu, nhỏ gọn) — cài bản này.
+            - `...-debug.apk`: bản gỡ lỗi.

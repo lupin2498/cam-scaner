@@ -12,5 +12,6 @@
 *.aab
 *.jks
 *.keystore
+!app/debug.keystore
 /kotlin-js-store/
 .kotlin/
