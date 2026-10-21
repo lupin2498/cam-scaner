@@ -1,0 +1,2 @@
+// Cấu hình build cho Broadcast Extension: lấy số phiên bản giống ứng dụng chính.
+#include "../Flutter/Generated.xcconfig"
