@@ -163,7 +163,24 @@ object DocumentDetector {
         return 127.0
     }
 
-    /** Wraps the luminance plane of a camera frame without copying. */
-    fun grayFromPlane(buffer: java.nio.ByteBuffer, width: Int, height: Int, rowStride: Int): Mat =
-        Mat(height, width, CvType.CV_8UC1, buffer, rowStride.toLong())
+    /**
+     * Copies the luminance plane of a camera frame (rows may be padded to [rowStride]) into a Mat.
+     * [scratch] is reused between frames when large enough.
+     */
+    fun grayFromPlane(buffer: java.nio.ByteBuffer, width: Int, height: Int, rowStride: Int, scratch: ByteArray? = null): Mat {
+        val data = if (scratch != null && scratch.size >= width * height) scratch else ByteArray(width * height)
+        val src = buffer.duplicate()
+        if (rowStride == width) {
+            src.position(0)
+            src.get(data, 0, minOf(width * height, src.remaining()))
+        } else {
+            for (row in 0 until height) {
+                src.position(row * rowStride)
+                src.get(data, row * width, minOf(width, src.remaining()))
+            }
+        }
+        val mat = Mat(height, width, CvType.CV_8UC1)
+        mat.put(0, 0, data, 0, width * height)
+        return mat
+    }
 }

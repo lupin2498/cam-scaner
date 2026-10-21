@@ -76,6 +76,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -360,7 +362,11 @@ private fun CameraContent(session: ScanSessionViewModel, onClose: () -> Unit, on
                 ) {
                     Icon(Icons.Filled.PhotoLibrary, stringResource(R.string.home_import), tint = Color.White, modifier = Modifier.size(30.dp))
                 }
-                ShutterButton(progress = if (settings.autoCapture) holdProgress else 0f, busy = capturing) { capture() }
+                ShutterButton(
+                    label = stringResource(R.string.camera_capture),
+                    progress = if (settings.autoCapture) holdProgress else 0f,
+                    busy = capturing,
+                ) { capture() }
                 val last = session.pages.lastOrNull()
                 if (settings.batchMode && last != null) {
                     Box(
@@ -405,8 +411,8 @@ private fun ModeChip(label: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun ShutterButton(progress: Float, busy: Boolean, onClick: () -> Unit) {
-    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(84.dp)) {
+private fun ShutterButton(label: String, progress: Float, busy: Boolean, onClick: () -> Unit) {
+    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(84.dp).semantics { contentDescription = label }) {
         if (progress > 0f) {
             CircularProgressIndicator(
                 progress = { progress },

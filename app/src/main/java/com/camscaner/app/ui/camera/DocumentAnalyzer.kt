@@ -14,6 +14,7 @@ data class FrameDetection(val corners: Corners?, val frameWidth: Int, val frameH
 class DocumentAnalyzer(private val onResult: (FrameDetection) -> Unit) : ImageAnalysis.Analyzer {
 
     private var lastRun = 0L
+    private var scratch: ByteArray? = null
 
     override fun analyze(image: ImageProxy) {
         try {
@@ -21,7 +22,9 @@ class DocumentAnalyzer(private val onResult: (FrameDetection) -> Unit) : ImageAn
             if (now - lastRun < MIN_INTERVAL_MS) return
             lastRun = now
             val plane = image.planes[0]
-            val gray = DocumentDetector.grayFromPlane(plane.buffer, image.width, image.height, plane.rowStride)
+            val size = image.width * image.height
+            val buffer = scratch?.takeIf { it.size >= size } ?: ByteArray(size).also { scratch = it }
+            val gray = DocumentDetector.grayFromPlane(plane.buffer, image.width, image.height, plane.rowStride, buffer)
             val corners = try {
                 DocumentDetector.detectGray(gray)
             } finally {

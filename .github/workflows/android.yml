@@ -29,3 +29,55 @@ jobs:
         with:
           name: cam-scaner-apk
           path: app/build/outputs/apk/**/*.apk
+
+  device-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Build app and test APKs
+        run: ./gradlew --no-daemon -PwithX86 assembleDebug assembleDebugAndroidTest
+
+      - name: Instrumented tests on emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          profile: pixel_6
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back emulated
+          disable-animations: true
+          script: |
+            adb shell rm -rf /sdcard/Pictures/camscaner || true
+            ./gradlew --no-daemon -PwithX86 connectedDebugAndroidTest > connected.log 2>&1; echo $? > exit_code.txt
+            grep -E "Tests on|FAILED|Exception|Error|expected|assert" connected.log | head -n 120 || true
+            tail -n 40 connected.log
+            adb pull /sdcard/Pictures/camscaner screenshots || true
+            adb logcat -d > logcat.txt || true
+            grep -E "FATAL EXCEPTION|AndroidRuntime|camscaner" logcat.txt | tail -n 80 || true
+            exit $(cat exit_code.txt)
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: device-test-results
+          path: |
+            screenshots/
+            logcat.txt
+            connected.log
+            app/build/reports/androidTests/
+            app/build/outputs/androidTest-results/
