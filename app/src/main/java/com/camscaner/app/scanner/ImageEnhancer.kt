@@ -129,7 +129,7 @@ object ImageEnhancer {
     }
 
     /**
-     * Per-channel illumination map at full resolution (8-bit). A local estimate (dilate + median,
+     * Per-channel illumination map at full resolution (8-bit). A local estimate (closing + median,
      * removes text) is trusted where it looks like paper — neutral and not too dark relative to a
      * smooth surface fit; elsewhere (colored blocks, photos) the smooth fit is used instead.
      */
@@ -142,13 +142,15 @@ object ImageEnhancer {
         val sw = small.cols()
         val sh = small.rows()
         val longSide = max(sw, sh)
-        val k = odd(max(3, longSide / 80)).toDouble()
+        // closing (dilate then erode) removes text without shifting the edges of shadows,
+        // which a plain dilation would turn into a dark line along every shadow boundary
+        val k = odd(max(3, longSide / 45)).toDouble()
         val medianSize = odd(max(5, longSide / 25))
         val se = Imgproc.getStructuringElement(Imgproc.MORPH_ELLIPSE, Size(k, k)).track()
 
         val local = split(small).map { c ->
             val d = mat()
-            Imgproc.dilate(c, d, se)
+            Imgproc.morphologyEx(c, d, Imgproc.MORPH_CLOSE, se)
             Imgproc.medianBlur(d, d, medianSize)
             val f = mat()
             d.convertTo(f, CvType.CV_32F)

@@ -192,8 +192,8 @@ class UiFlowTest {
     @Test
     fun cameraCaptureFlow() {
         scenario = ActivityScenario.launch(MainActivity::class.java)
-        compose.waitText(str(R.string.home_scan))
-        compose.onNodeWithText(str(R.string.home_scan)).performClick()
+        compose.waitDescription(str(R.string.home_scan))
+        compose.onNodeWithContentDescription(str(R.string.home_scan)).performClick()
         compose.waitText(str(R.string.camera_mode_batch))
         Thread.sleep(3000)
         TestImages.screenshot("12_camera")

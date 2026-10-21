@@ -56,6 +56,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -154,8 +156,11 @@ fun HomeScreen(
                     containerColor = MaterialTheme.colorScheme.secondaryContainer,
                 ) { Icon(Icons.Filled.PhotoLibrary, stringResource(R.string.home_import)) }
                 Spacer(Modifier.height(12.dp))
+                val scanLabel = stringResource(R.string.home_scan)
                 ExtendedFloatingActionButton(
                     onClick = onScan,
+                    // Material hides the FAB text from accessibility; label the button itself
+                    modifier = Modifier.semantics { contentDescription = scanLabel },
                     icon = { Icon(Icons.Filled.CameraAlt, null) },
                     text = { Text(stringResource(R.string.home_scan)) },
                     containerColor = MaterialTheme.colorScheme.primary,
