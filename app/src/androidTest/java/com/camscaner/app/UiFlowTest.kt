@@ -91,6 +91,12 @@ class UiFlowTest {
 
     private fun str(id: Int, vararg args: Any) = context.getString(id, *args)
 
+    /** The test clock drives composition, so let pending frames run before capturing the screen. */
+    private fun shot(name: String) {
+        compose.waitForIdle()
+        TestImages.screenshot(name)
+    }
+
     /** Filter of the first page in the activity's scan session. */
     private fun filterOfDraft(): com.camscaner.app.scanner.ScanFilter? {
         var filter: com.camscaner.app.scanner.ScanFilter? = null
@@ -109,10 +115,10 @@ class UiFlowTest {
     fun homeShowsEmptyStateAndSettings() {
         scenario = ActivityScenario.launch(MainActivity::class.java)
         compose.waitText(str(R.string.home_empty_title))
-        TestImages.screenshot("01_home_empty")
+        shot("01_home_empty")
         compose.onNodeWithContentDescription(str(R.string.home_settings)).performClick()
         compose.waitText(str(R.string.settings_default_filter))
-        TestImages.screenshot("02_settings")
+        shot("02_settings")
         compose.onNodeWithText(str(R.string.filter_bw)).performClick()
         assertEquals(com.camscaner.app.scanner.ScanFilter.BW, app.settings.defaultFilter)
         app.settings.defaultFilter = com.camscaner.app.scanner.ScanFilter.MAGIC
@@ -133,13 +139,13 @@ class UiFlowTest {
         compose.waitText(str(R.string.crop_title))
         compose.waitText(str(R.string.crop_auto))
         Thread.sleep(800)
-        TestImages.screenshot("03_crop")
+        shot("03_crop")
         compose.onAllNodesWithText(str(R.string.next)).onFirst().performClick()
 
         compose.waitText(str(R.string.filter_title))
         compose.waitText(str(R.string.filter_original))
         Thread.sleep(1500)
-        TestImages.screenshot("04_filter_magic")
+        shot("04_filter_magic")
         // the filter strip scrolls horizontally; B&W is past the screen edge on a phone
         compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText(str(R.string.filter_bw)))
         compose.waitForIdle()
@@ -147,13 +153,13 @@ class UiFlowTest {
         compose.onNodeWithText(str(R.string.filter_bw)).performClick()
         compose.waitUntil(10_000) { app.documents.documents.value.isEmpty() && filterOfDraft() == com.camscaner.app.scanner.ScanFilter.BW }
         Thread.sleep(1500)
-        TestImages.screenshot("05_filter_bw")
+        shot("05_filter_bw")
         compose.onNodeWithContentDescription(str(R.string.save)).performClick()
 
         compose.waitText(str(R.string.doc_export_pdf), 60_000)
         compose.waitText(str(R.string.doc_reorder_hint))
         Thread.sleep(800)
-        TestImages.screenshot("06_document")
+        shot("06_document")
         val docs = app.documents.documents.value
         assertEquals(1, docs.size)
         assertEquals(1, docs[0].pages.size)
@@ -162,11 +168,11 @@ class UiFlowTest {
         compose.onNodeWithText(str(R.string.doc_export_pdf)).performClick()
         compose.waitText(str(R.string.export_start))
         Thread.sleep(800)
-        TestImages.screenshot("07_export_options")
+        shot("07_export_options")
         compose.onNodeWithText(str(R.string.export_start)).performClick()
         compose.waitText(str(R.string.export_done, "").substringBefore("(").trim(), 60_000)
         Thread.sleep(500)
-        TestImages.screenshot("08_export_done")
+        shot("08_export_done")
         val pdf = File(context.cacheDir, "exports").listFiles()!!.filter { it.extension == "pdf" }
         assertTrue("no pdf in ${pdf.map { it.name }}", pdf.isNotEmpty())
     }
@@ -184,13 +190,13 @@ class UiFlowTest {
         scenario = ActivityScenario.launch(MainActivity::class.java)
 
         compose.waitText("Hoa don thang 10")
-        TestImages.screenshot("09_home_list")
+        shot("09_home_list")
         compose.onNodeWithText("Hoa don thang 10").performClick()
         compose.waitText(str(R.string.doc_reorder_hint))
         compose.onNodeWithText("1").performClick()
         compose.waitText(str(R.string.page_ocr))
         Thread.sleep(800)
-        TestImages.screenshot("10_page_viewer")
+        shot("10_page_viewer")
 
         val before = app.documents.get(docId)!!.pages[0]
         compose.onNodeWithText(str(R.string.page_rotate)).performClick()
@@ -200,7 +206,7 @@ class UiFlowTest {
 
         compose.onNodeWithText(str(R.string.page_ocr)).performClick()
         compose.waitText(str(R.string.copy), 60_000)
-        TestImages.screenshot("11_ocr")
+        shot("11_ocr")
         compose.onNodeWithText("12345", substring = true).assertExists()
     }
 
@@ -211,18 +217,18 @@ class UiFlowTest {
         compose.onNodeWithContentDescription(str(R.string.home_scan)).performClick()
         compose.waitText(str(R.string.camera_mode_batch))
         Thread.sleep(3000)
-        TestImages.screenshot("12_camera")
+        shot("12_camera")
         compose.waitDescription(str(R.string.camera_capture))
         compose.onNodeWithContentDescription(str(R.string.camera_capture)).performClick()
         compose.waitText(str(R.string.crop_auto), 30_000)
         Thread.sleep(1000)
-        TestImages.screenshot("13_camera_crop")
+        shot("13_camera_crop")
         compose.onAllNodesWithText(str(R.string.next)).onFirst().performClick()
         compose.waitDescription(str(R.string.save))
         Thread.sleep(1500)
         compose.onNodeWithContentDescription(str(R.string.save)).performClick()
         compose.waitText(str(R.string.doc_export_pdf), 30_000)
-        TestImages.screenshot("14_camera_saved")
+        shot("14_camera_saved")
         assertEquals(1, app.documents.documents.value.size)
     }
 
@@ -281,7 +287,7 @@ class UiFlowTest {
 
         // back on the page viewer, not a new document
         compose.waitText(str(R.string.page_ocr), 30_000)
-        TestImages.screenshot("15_after_recrop")
+        shot("15_after_recrop")
         val docs = app.documents.documents.value
         assertEquals(1, docs.size)
         val after = docs[0].pages.single()
@@ -325,7 +331,7 @@ class UiFlowTest {
         compose.onNodeWithContentDescription(str(R.string.save)).performClick()
         compose.waitUntil(30_000) { app.documents.get(docId)?.pages?.size == 2 }
         compose.waitText(str(R.string.doc_reorder_hint))
-        TestImages.screenshot("16_two_pages")
+        shot("16_two_pages")
         assertEquals(1, app.documents.documents.value.size)
     }
 }

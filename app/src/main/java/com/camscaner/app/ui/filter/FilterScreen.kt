@@ -60,7 +60,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.withStarted
 import com.camscaner.app.R
 import com.camscaner.app.scanner.Adjustments
 import com.camscaner.app.ui.ScanSessionViewModel
@@ -74,6 +76,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun FilterScreen(session: ScanSessionViewModel, onBack: () -> Unit, onSaved: (docId: String) -> Unit) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
     val vm: FilterViewModel = viewModel()
     val snackbar = remember { SnackbarHostState() }
@@ -109,7 +112,9 @@ fun FilterScreen(session: ScanSessionViewModel, onBack: () -> Unit, onSaved: (do
             val result = runCatching { session.save(Share.defaultDocumentName(context)) }
             saving = false
             result
-                .onSuccess { id -> onSaved(id) }
+                // navigation must happen on the main thread and while the activity is visible;
+                // the coroutine may resume elsewhere after the background save
+                .onSuccess { id -> lifecycleOwner.lifecycle.withStarted { onSaved(id) } }
                 .onFailure { e ->
                     Log.e(TAG, "Saving pages failed", e)
                     // a toast still shows if the page list was already cleared
