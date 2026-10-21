@@ -141,6 +141,13 @@ class _SelfTestPageState extends State<SelfTestPage> {
     host.toggleCamera();
     check('bật lại camera', await waitFor(() => guest.remoteCam));
 
+    await host.suspendCamera();
+    await host.resumeCamera();
+    check('nhả/mở lại camera (khi quét QR) vẫn có camera', host.hasCam && host.camOn);
+    final before = guest.stats.inKbps;
+    await Future<void>.delayed(const Duration(seconds: 3));
+    check('video vẫn truyền sau khi mở lại camera', guest.stats.inKbps > 50, 'trước=$before sau=${guest.stats.inKbps}');
+
     await host.startScreenShare();
     if (host.screenOn) {
       check('khách thấy chủ đang chia sẻ màn hình', await waitFor(() => guest.remoteScreen));
@@ -189,6 +196,21 @@ class _SelfTestPageState extends State<SelfTestPage> {
     check('video sau khi vào lại', await waitFor(() => vw(guest.remoteCamRenderer) > 0 && vw(host.remoteCamRenderer) > 0),
         '${host.debugSnapshot()} ${guest.debugSnapshot()}');
     check('tên khách mới', await waitFor(() => host.remoteName == 'Khách Hai'), host.remoteName);
+
+    // Cùng máy vào lại khi chủ phòng vẫn tưởng đang họp (app khách bị tắt đột ngột).
+    final again = lanGuest('Khách Hai', 'G2', hostIn);
+    show(again);
+    await again.start();
+    check('cùng máy vào lại thay phiên cũ', await waitFor(() => again.phase == MeetingPhase.connected && host.phase == MeetingPhase.connected),
+        '${host.phase} / ${again.phase} ${again.endReason}');
+    check('video sau khi thay phiên', await waitFor(() => vw(again.remoteCamRenderer) > 0 && vw(host.remoteCamRenderer) > 0),
+        '${host.debugSnapshot()} ${again.debugSnapshot()}');
+    setState(() => _views.remove(guest));
+    guest.dispose(); // phiên cũ gửi 'bye' qua kênh đã đóng: không được làm hỏng phiên mới
+    await Future<void>.delayed(const Duration(seconds: 2));
+    check('phiên mới không bị phiên cũ làm hỏng', host.phase == MeetingPhase.connected && again.phase == MeetingPhase.connected,
+        '${host.phase} / ${again.phase}');
+    guest = again;
 
     await host.hangUp();
     check('chủ kết thúc -> khách nhận thông báo', await waitFor(() => guest.isEnded), guest.phase);
@@ -246,6 +268,26 @@ class _SelfTestPageState extends State<SelfTestPage> {
     await guest.hangUp();
     check('khách rời -> chủ tạo mã mời mới', await waitFor(() => host.phase == MeetingPhase.waiting && host.offerCode != null, seconds: 15),
         host.phase);
+    // Khách bỏ đi trước khi chủ nhập mã trả lời -> chủ quay lại chờ (không kết thúc phòng).
+    final code1 = host.offerCode!;
+    final quitter = MeetingController(
+      role: MeetingRole.guest,
+      mode: MeetingMode.internet,
+      settings: AppSettings.memory(name: 'Bỏ Đi')..usePublicStun = false,
+      enableNativeExtras: false,
+      offerText: code1,
+    );
+    await quitter.start();
+    check('khách 2 tạo mã trả lời', await waitFor(() => quitter.answerCode != null));
+    final ans = quitter.answerCode!;
+    await quitter.hangUp();
+    quitter.dispose();
+    await host.applyAnswerCode(ans);
+    check('chủ vào trạng thái đang kết nối', host.phase == MeetingPhase.connecting, host.phase);
+    check('không kết nối được -> chủ quay lại chờ, mã mời mới', await waitFor(() => host.phase == MeetingPhase.waiting && host.offerCode != code1, seconds: 60),
+        '${host.phase} ${host.endReason}');
+    check('phòng của chủ không bị kết thúc', !host.isEnded);
+
     await host.hangUp();
     setState(() => _views.clear());
     host.dispose();

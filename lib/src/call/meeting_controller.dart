@@ -642,15 +642,13 @@ class MeetingController extends ChangeNotifier {
       await t.close();
       return;
     }
-    final sameGuest = _sig != null && t.peerId.isNotEmpty && t.peerId == _sigPeerId;
-    final busy = !sameGuest &&
-        _sig != null &&
-        !_sig!.isClosed &&
+    // Cùng một máy vào lại (ví dụ app bị tắt rồi mở lại): thay phiên cũ.
+    final sameDevice = t.peerId.isNotEmpty && t.peerId == _sigPeerId;
+    final inSession = (_sig != null && !_sig!.isClosed) || remotePresent;
+    final busy = !sameDevice &&
+        inSession &&
         (phase == MeetingPhase.connecting || phase == MeetingPhase.connected || phase == MeetingPhase.reconnecting);
-    final busyNoSig = !sameGuest &&
-        remotePresent &&
-        (phase == MeetingPhase.connected || phase == MeetingPhase.reconnecting);
-    if (busy || busyNoSig) {
+    if (busy) {
       try {
         await t.send({'t': 'busy'});
       } catch (_) {}
@@ -658,6 +656,8 @@ class MeetingController extends ChangeNotifier {
       await t.close();
       return;
     }
+    _recoveryTimer?.cancel();
+    _giveUpTimer?.cancel();
     await _detachSignaling();
     _sig = t;
     _sigPeerId = t.peerId;
@@ -669,13 +669,15 @@ class MeetingController extends ChangeNotifier {
     }
     _sigSub = t.messages.listen(_onSignal, onDone: () => _onSignalClosed(t));
     try {
-      if (sameGuest && _remoteDescSet && _pc != null) {
-        await _sendOffer(iceRestart: true);
-      } else {
-        if (_remoteDescSet || _pc == null) await _resetPeerConnection();
-        _setPhase(MeetingPhase.connecting);
-        await _sendOffer();
+      // Mỗi phiên khách mới dùng một PeerConnection mới (DTLS mới).
+      if (_remoteDescSet || _pc == null) {
+        _everConnected = false;
+        connectedAt = null;
+        await _resetPeerConnection();
+        if (t.peerName.isNotEmpty) remoteName = t.peerName;
       }
+      _setPhase(MeetingPhase.connecting);
+      await _sendOffer();
     } catch (e) {
       debugPrint('Gửi offer lỗi: $e');
     }
@@ -969,7 +971,8 @@ class MeetingController extends ChangeNotifier {
     _giveUpTimer = Timer(d, () {
       if (isEnded || phase == MeetingPhase.connected) return;
       final msg = message ?? 'Mất kết nối với $remoteDisplayName.';
-      if (role == MeetingRole.host && _everConnected) {
+      // Chủ phòng giữ phòng mở và chờ người khác (như Zoom); khách thì kết thúc.
+      if (role == MeetingRole.host) {
         _backToWaiting(msg);
       } else {
         _end(msg, error: true);
@@ -1124,6 +1127,59 @@ class MeetingController extends ChangeNotifier {
     } catch (e) {
       _notice('Không đổi được camera');
     }
+  }
+
+  bool _cameraSuspended = false;
+
+  /// Tạm nhả camera (ví dụ để mở máy quét QR): điện thoại không cho 2 phiên camera cùng lúc.
+  Future<void> suspendCamera() async {
+    final s = _camStream;
+    if (s == null || _cameraSuspended) return;
+    _cameraSuspended = true;
+    try {
+      await _camTx?.sender.replaceTrack(null);
+    } catch (_) {}
+    _setSrc(localRenderer, null);
+    _camStream = null;
+    for (final t in s.getTracks()) {
+      try {
+        await t.stop();
+      } catch (_) {}
+    }
+    try {
+      await s.dispose();
+    } catch (_) {}
+    _notify();
+  }
+
+  /// Mở lại camera sau [suspendCamera] và gắn lại vào kết nối.
+  Future<void> resumeCamera() async {
+    if (!_cameraSuspended || isEnded) return;
+    _cameraSuspended = false;
+    final q = settings.quality;
+    try {
+      _camStream = await navigator.mediaDevices.getUserMedia({
+        'audio': false,
+        'video': {
+          'facingMode': frontCamera ? 'user' : 'environment',
+          'width': q.width,
+          'height': q.height,
+          'frameRate': q.fps,
+        },
+      });
+      final t = _camTrack;
+      if (t == null) throw UserFacingError('Không có camera');
+      t.enabled = camOn;
+      await _camTx?.sender.replaceTrack(t);
+      _setSrc(localRenderer, _camStream);
+    } catch (e) {
+      debugPrint('Mở lại camera lỗi: $e');
+      hasCam = false;
+      camOn = false;
+      _sendState();
+      _notice('Không mở lại được camera');
+    }
+    _notify();
   }
 
   Future<void> toggleSpeaker() async {

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
@@ -55,7 +56,11 @@ class _MeetingPageState extends State<MeetingPage> with WidgetsBindingObserver {
     if (!mounted) return;
     if (_lastPhase != c.phase) {
       if (c.phase == MeetingPhase.connected) _invitePanelOpen = false;
-      if (c.phase == MeetingPhase.waiting) _invitePanelOpen = true;
+      if (c.phase == MeetingPhase.waiting) {
+        _invitePanelOpen = true;
+        _answerInput.clear();
+        _answerError = null;
+      }
       _lastPhase = c.phase;
     }
     setState(() {});
@@ -87,7 +92,7 @@ class _MeetingPageState extends State<MeetingPage> with WidgetsBindingObserver {
       context: context,
       showDragHandle: true,
       builder: (ctx) => SafeArea(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -137,7 +142,7 @@ class _MeetingPageState extends State<MeetingPage> with WidgetsBindingObserver {
   Widget _buildEnded() {
     return SafeArea(
       child: Center(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -419,35 +424,43 @@ class _MeetingPageState extends State<MeetingPage> with WidgetsBindingObserver {
                 icon: const Icon(Icons.cameraswitch_rounded),
                 onPressed: c.switchCamera,
               ),
-            const Spacer(),
-            InkWell(
-              onTap: _showInfo,
-              borderRadius: BorderRadius.circular(8),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Row(
+            Expanded(
+              child: Center(
+                child: InkWell(
+                  onTap: _showInfo,
+                  borderRadius: BorderRadius.circular(8),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                    child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.lock, size: 14, color: Color(0xFF3DDC84)),
-                        const SizedBox(width: 4),
-                        Text(
-                          c.mode == MeetingMode.lan ? 'P2P · Wi-Fi/Hotspot' : 'P2P · Internet',
-                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.lock, size: 14, color: Color(0xFF3DDC84)),
+                            const SizedBox(width: 4),
+                            Flexible(
+                              child: Text(
+                                c.mode == MeetingMode.lan ? 'P2P · Wi-Fi/Hotspot' : 'P2P · Internet',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                            const Icon(Icons.expand_more, color: Colors.white70, size: 18),
+                          ],
                         ),
-                        const Icon(Icons.expand_more, color: Colors.white70, size: 18),
+                        Text(status,
+                            key: const Key('statusText'),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(color: Colors.white70, fontSize: 12)),
                       ],
                     ),
-                    Text(status,
-                        key: const Key('statusText'),
-                        style: const TextStyle(color: Colors.white70, fontSize: 12)),
-                  ],
+                  ),
                 ),
               ),
             ),
-            const Spacer(),
             if (c.otherCallActive)
               const Tooltip(
                 message: 'Đang có cuộc gọi khác — cuộc họp chạy song song',
@@ -708,9 +721,13 @@ class _MeetingPageState extends State<MeetingPage> with WidgetsBindingObserver {
       );
 
   Future<void> _scanAnswer() async {
+    // Nhả camera của cuộc họp để máy quét QR dùng được camera.
+    await c.suspendCamera();
+    if (!mounted) return;
     final v = await Navigator.of(context).push<String>(
       MaterialPageRoute(builder: (_) => const ScannerPage(title: 'Quét mã trả lời')),
     );
+    await c.resumeCamera();
     if (v == null || !mounted) return;
     _answerInput.text = v;
     await _submitAnswer();
@@ -777,7 +794,7 @@ class _MeetingPageState extends State<MeetingPage> with WidgetsBindingObserver {
         builder: (ctx, _) {
           final s = c.stats;
           return SafeArea(
-            child: Padding(
+            child: SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -924,10 +941,14 @@ class _ChatSheetState extends State<_ChatSheet> {
   @override
   Widget build(BuildContext context) {
     final c = widget.controller;
+    final insets = MediaQuery.viewInsetsOf(context).bottom;
+    final screenH = MediaQuery.sizeOf(context).height;
+    // Ngang + bàn phím mở: thu nhỏ bảng chat để không bị tràn.
+    final sheetH = math.max(140.0, math.min(screenH * 0.6, screenH - insets - 56));
     return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      padding: EdgeInsets.only(bottom: insets),
       child: SizedBox(
-        height: MediaQuery.sizeOf(context).height * 0.6,
+        height: sheetH,
         child: AnimatedBuilder(
           animation: c,
           builder: (context, _) => Column(
