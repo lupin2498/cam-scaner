@@ -90,6 +90,27 @@ class GeometryTest {
     }
 
     @Test
+    fun aspectRatioRecoveredForTelephotoPhotos() {
+        // An imported A4 photo from a 3x lens (focal length about 2.2x the long side), tilted
+        // on both axes: the estimated focal length must be kept, not replaced by the default.
+        val ratio = 1.0 / sqrt(2.0)
+        val w = 3072
+        val h = 4096
+        val f = 2.2 * h
+        for ((rx, ry) in listOf(0.45 to 0.15, -0.4 to 0.2, 0.5 to -0.1)) {
+            val pts = listOf(-ratio / 2 to -0.5, ratio / 2 to -0.5, ratio / 2 to 0.5, -ratio / 2 to 0.5).map { (x, y) ->
+                val y1 = y * cos(rx)
+                val z1 = y * sin(rx)
+                val x2 = x * cos(ry) + z1 * sin(ry)
+                val z2 = -x * sin(ry) + z1 * cos(ry) + f / (0.75 * h)
+                Pt((f * x2 / z2 + w / 2).toFloat(), (f * y1 / z2 + h / 2).toFloat())
+            }
+            val est = estimateAspectRatio(Corners(pts[0], pts[1], pts[2], pts[3]), w, h)
+            assertTrue("estimated $est for tilt ($rx, $ry)", abs(est / ratio - 1) < 0.02)
+        }
+    }
+
+    @Test
     fun correctedSizeRespectsMaxDimension() {
         val c = Corners(Pt(0f, 0f), Pt(3000f, 0f), Pt(3000f, 4000f), Pt(0f, 4000f))
         val (w, h) = correctedSize(c, 0.75, 2000)

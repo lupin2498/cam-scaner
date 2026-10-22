@@ -5,6 +5,7 @@ import kotlin.math.acos
 import kotlin.math.atan2
 import kotlin.math.hypot
 import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.sqrt
 
 /** A point. Corners are stored normalized to [0, 1] relative to the upright original image. */
@@ -125,10 +126,11 @@ fun estimateAspectRatio(c: Corners, imageWidth: Int, imageHeight: Int): Double {
     val n2 = DoubleArray(3) { k2 * m2[it] - m1[it] }
     val n3 = DoubleArray(3) { k3 * m3[it] - m1[it] }
 
-    // The focal length follows from the vanishing points, but becomes meaningless when a pair of
-    // sides is (nearly) parallel: with a few pixels of corner noise it comes out many times too
-    // large or negative. Then a typical phone focal length is used in the same formula, which
-    // stays valid in the parallel case.
+    // The focal length follows from the vanishing points, but is meaningless when a pair of sides
+    // is (nearly) parallel: with a few pixels of corner noise it comes out many times too large or
+    // negative. Then a typical phone focal length is used in the same formula, which stays valid in
+    // the parallel case. Clear perspective on both axes keeps the estimate, so photos taken with a
+    // telephoto or ultra-wide lens are measured correctly.
     val longSide = max(imageWidth, imageHeight).toDouble()
     var f = Double.NaN
     if (abs(n2[2]) > 1e-6 && abs(n3[2]) > 1e-6) {
@@ -136,7 +138,9 @@ fun estimateAspectRatio(c: Corners, imageWidth: Int, imageHeight: Int): Double {
             (n2[1] * n3[1] - (n2[1] * n3[2] + n2[2] * n3[1]) * v0 + n2[2] * n3[2] * v0 * v0)) / (n2[2] * n3[2])
         if (f2 > 0) f = sqrt(f2)
     }
-    if (f.isNaN() || f < MIN_FOCAL * longSide || f > MAX_FOCAL * longSide) f = NOMINAL_FOCAL * longSide
+    val convergence = min(angleBetween(c.tl, c.tr, c.bl, c.br), angleBetween(c.tl, c.bl, c.tr, c.br))
+    val plausible = !f.isNaN() && f >= MIN_FOCAL * longSide && f <= MAX_FOCAL * longSide
+    if (!plausible || convergence < MIN_CONVERGENCE_DEG) f = NOMINAL_FOCAL * longSide
     fun quad(n: DoubleArray): Double {
         val x = (n[0] - u0 * n[2]) / f
         val y = (n[1] - v0 * n[2]) / f
@@ -148,11 +152,26 @@ fun estimateAspectRatio(c: Corners, imageWidth: Int, imageHeight: Int): Double {
     return ratio
 }
 
-// Focal length range accepted from the estimate, and the fallback, relative to the image's long
-// side. Phone main cameras are around 0.7-1.0; a wider range lets corner noise through.
-private const val MIN_FOCAL = 0.55
-private const val MAX_FOCAL = 1.5
+// Focal lengths relative to the image's long side: the range accepted from the estimate (ultra-wide
+// to 5x telephoto) and the fallback, a typical phone main camera.
+private const val MIN_FOCAL = 0.25
+private const val MAX_FOCAL = 5.0
 private const val NOMINAL_FOCAL = 0.8
+
+/** Opposite sides must converge at least this much for the focal estimate to be trusted. */
+private const val MIN_CONVERGENCE_DEG = 1.0
+
+/** Angle in degrees between the lines a1-a2 and b1-b2, ignoring direction. */
+private fun angleBetween(a1: Pt, a2: Pt, b1: Pt, b2: Pt): Double {
+    val ux = (a2.x - a1.x).toDouble()
+    val uy = (a2.y - a1.y).toDouble()
+    val vx = (b2.x - b1.x).toDouble()
+    val vy = (b2.y - b1.y).toDouble()
+    val norm = sqrt(ux * ux + uy * uy) * sqrt(vx * vx + vy * vy)
+    if (norm <= 0) return 0.0
+    val cos = (abs(ux * vx + uy * vy) / norm).coerceAtMost(1.0)
+    return Math.toDegrees(acos(cos))
+}
 
 /** Output size (width, height) in pixels for a perspective-corrected page with the given real ratio. */
 fun correctedSize(c: Corners, ratio: Double, maxDim: Int): Pair<Int, Int> {

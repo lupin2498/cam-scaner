@@ -1,6 +1,8 @@
 package com.camscaner.app.ui.components
 
 import android.app.Activity
+import android.os.Build
+import android.view.Window
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
@@ -46,13 +48,14 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.camscaner.app.R
 import java.io.File
+import java.util.WeakHashMap
 
-/** Dark full-bleed screens currently shown; system bar icons are light while any is. */
-private var darkScreens = 0
+/** Dark full-bleed screens shown per window; its system bar icons are light while any is. */
+private val darkScreens = WeakHashMap<Window, Int>()
 
 /**
  * Light status and navigation bar icons while a dark, full-bleed screen (camera, crop, filter,
- * page viewer) is shown; the theme's own icons come back when the last one leaves.
+ * page viewer) is shown; the theme's own icons come back when the window's last one leaves.
  */
 @Composable
 fun LightSystemBarIcons() {
@@ -60,17 +63,22 @@ fun LightSystemBarIcons() {
     val darkTheme = isSystemInDarkTheme()
     if (view.isInEditMode) return
     DisposableEffect(view, darkTheme) {
-        val window = (view.context as? Activity)?.window
-        val controller = window?.let { WindowCompat.getInsetsController(it, view) }
-        darkScreens++
-        controller?.isAppearanceLightStatusBars = false
-        controller?.isAppearanceLightNavigationBars = false
+        val window = (view.context as? Activity)?.window ?: return@DisposableEffect onDispose { }
+        val controller = WindowCompat.getInsetsController(window, view)
+        // Before Android 10 the navigation bar keeps a light scrim, so its icons stay dark there.
+        val navigationToo = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+        darkScreens[window] = (darkScreens[window] ?: 0) + 1
+        controller.isAppearanceLightStatusBars = false
+        if (navigationToo) controller.isAppearanceLightNavigationBars = false
         onDispose {
-            darkScreens--
             // screens cross-fade, so the next dark screen may already be counted
-            if (darkScreens == 0) {
-                controller?.isAppearanceLightStatusBars = !darkTheme
-                controller?.isAppearanceLightNavigationBars = !darkTheme
+            val left = (darkScreens[window] ?: 1) - 1
+            if (left > 0) {
+                darkScreens[window] = left
+            } else {
+                darkScreens.remove(window)
+                controller.isAppearanceLightStatusBars = !darkTheme
+                if (navigationToo) controller.isAppearanceLightNavigationBars = !darkTheme
             }
         }
     }
