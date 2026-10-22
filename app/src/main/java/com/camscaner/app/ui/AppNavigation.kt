@@ -88,7 +88,7 @@ fun AppNavigation(sharedUris: List<Uri>, onSharedConsumed: () -> Unit) {
             CameraScreen(
                 session = session,
                 onClose = {
-                    session.clear()
+                    session.abandon()
                     nav.popBackStack()
                 },
                 onDone = { nav.navigate(Routes.CROP) { launchSingleTop = true } },

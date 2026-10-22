@@ -74,7 +74,14 @@ class ScanSessionViewModel(app: Application, private val state: SavedStateHandle
     var cropReady by mutableStateOf(false)
         private set
 
+    /**
+     * Bumped when the scan is restarted or abandoned. Photo processing and imports outlive the
+     * screens that started them, so they check it before adding pages to a scan that is gone.
+     */
+    private var generation = 0
+
     fun start(docId: String?, returnRoute: String? = null) {
+        generation++
         clear()
         // a result nobody picked up (the filter screen left early) must not leak into this scan
         savedDocId = null
@@ -85,14 +92,24 @@ class ScanSessionViewModel(app: Application, private val state: SavedStateHandle
         this.returnRoute = returnRoute
     }
 
+    /** The user left the scan (camera closed): drop its pages and any photo still in progress. */
+    fun abandon() {
+        generation++
+        clear()
+        cropReady = false
+    }
+
     fun clear() {
         pages.filter { it.existingPageId == null }.forEach { it.originalFile.delete() }
         pages.clear()
         currentIndex = 0
     }
 
-    /** Normalizes a captured/imported photo, detects the sheet and appends it to the session. */
-    suspend fun addPhoto(raw: File): DraftPage? = withContext(Dispatchers.Default) {
+    /**
+     * Normalizes a captured/imported photo, detects the sheet and appends it to the session,
+     * unless the scan of generation [gen] has been abandoned meanwhile.
+     */
+    private suspend fun addPhoto(raw: File, gen: Int): DraftPage? = withContext(Dispatchers.Default) {
         val out = File(workDir, "${DocumentRepository.newId()}.jpg")
         val size = runCatching { ImageIO.normalize(raw, out) }.getOrNull()
         raw.delete()
@@ -110,9 +127,15 @@ class ScanSessionViewModel(app: Application, private val state: SavedStateHandle
             corners = detected,
             filter = settings.defaultFilter,
         )
-        withContext(Dispatchers.Main) {
+        val added = withContext(Dispatchers.Main) {
+            if (gen != generation) return@withContext false
             pages += draft
             currentIndex = pages.lastIndex
+            true
+        }
+        if (!added) {
+            out.delete()
+            return@withContext null
         }
         draft
     }
@@ -122,8 +145,10 @@ class ScanSessionViewModel(app: Application, private val state: SavedStateHandle
      * short; [cropReady] tells the navigation to open the crop screen.
      */
     fun importImages(uris: List<Uri>) {
+        val gen = generation
         viewModelScope.launch {
-            val imported = importUris(uris)
+            val imported = importUris(uris, gen)
+            if (gen != generation) return@launch
             if (imported < uris.size) {
                 Toast.makeText(scannerApp, scannerApp.getString(R.string.import_failed, uris.size - imported), Toast.LENGTH_LONG).show()
             }
@@ -135,26 +160,30 @@ class ScanSessionViewModel(app: Application, private val state: SavedStateHandle
      * Adds a photo taken by the camera. Runs in the ViewModel so leaving the camera meanwhile does not
      * lose it; a single capture replaces the session and then opens the crop screen.
      */
-    fun addCapture(file: File, single: Boolean): Job = viewModelScope.launch {
+    fun addCapture(file: File, single: Boolean): Job {
+        val gen = generation
         if (single) clear()
-        addPhoto(file)
-        if (single && pages.isNotEmpty()) cropReady = true
+        return viewModelScope.launch {
+            addPhoto(file, gen)
+            if (single && gen == generation && pages.isNotEmpty()) cropReady = true
+        }
     }
 
     fun consumeCropReady(): Boolean = cropReady.also { cropReady = false }
 
     /** Returns how many of [uris] could be read as images. */
-    private suspend fun importUris(uris: List<Uri>): Int {
+    private suspend fun importUris(uris: List<Uri>, gen: Int): Int {
         importing = true
         var imported = 0
         try {
             for (uri in uris) {
+                if (gen != generation) break
                 val tmp = File(workDir, "import_${DocumentRepository.newId()}")
                 val copied = withContext(Dispatchers.IO) {
                     runCatching { ImageIO.copyUri(scannerApp, uri, tmp) }.isSuccess
                 }
                 if (!copied) tmp.delete()
-                else if (addPhoto(tmp) != null) imported++
+                else if (addPhoto(tmp, gen) != null) imported++
             }
             currentIndex = 0
         } finally {

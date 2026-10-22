@@ -1,6 +1,7 @@
 package com.camscaner.app.ui.export
 
 import android.app.Application
+import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -53,7 +54,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -85,6 +85,7 @@ import com.camscaner.app.ui.components.BackButton
 import com.camscaner.app.ui.components.FileImage
 import com.camscaner.app.ui.components.ProgressDialog
 import com.camscaner.app.ui.components.SectionTitle
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -117,6 +118,22 @@ class ExportViewModel(app: Application, handle: SavedStateHandle) : AndroidViewM
         result = null
     }
 
+    /** Copies the exported PDF to a user-chosen location; outlives the screen like the export. */
+    fun saveTo(uri: Uri) {
+        val file = result ?: return
+        viewModelScope.launch {
+            val app = scannerApp
+            try {
+                withContext(Dispatchers.IO) { Share.copyToUri(app, file, uri) }
+                Toast.makeText(app, R.string.export_saved, Toast.LENGTH_SHORT).show()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Toast.makeText(app, app.getString(R.string.error_generic, e.message ?: e.javaClass.simpleName), Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
     fun export() {
         val doc = document.value ?: return
         if (progress != null) return
@@ -142,21 +159,13 @@ class ExportViewModel(app: Application, handle: SavedStateHandle) : AndroidViewM
 fun ExportScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val vm: ExportViewModel = viewModel()
-    val scope = rememberCoroutineScope()
     val document by vm.document.collectAsState()
     val doc = document ?: return
     val o = vm.options
     fun update(t: (PdfOptions) -> PdfOptions) = vm.updateOptions(t)
 
     val saveLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
-        val file = vm.result
-        if (uri != null && file != null) {
-            scope.launch {
-                runCatching { withContext(Dispatchers.IO) { Share.copyToUri(context, file, uri) } }
-                    .onSuccess { Toast.makeText(context, R.string.export_saved, Toast.LENGTH_SHORT).show() }
-                    .onFailure { Toast.makeText(context, context.getString(R.string.error_generic, it.message), Toast.LENGTH_LONG).show() }
-            }
-        }
+        if (uri != null) vm.saveTo(uri)
     }
 
     Scaffold(

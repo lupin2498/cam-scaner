@@ -7,13 +7,17 @@ import com.camscaner.app.scanner.Corners
 import com.camscaner.app.scanner.DocumentDetector
 import com.camscaner.app.scanner.Pt
 
-/** Detection result for a preview frame, in upright normalized coordinates. */
-data class FrameDetection(val corners: Corners?, val frameWidth: Int, val frameHeight: Int)
+/**
+ * Detection result for a preview frame, in upright normalized coordinates. [frame] makes every
+ * result distinct, so consumers keyed on it see repeated identical detections too.
+ */
+data class FrameDetection(val corners: Corners?, val frameWidth: Int, val frameHeight: Int, val frame: Long = 0)
 
 /** Runs the document detector on the luminance plane of preview frames (~12 fps). */
 class DocumentAnalyzer(private val onResult: (FrameDetection) -> Unit) : ImageAnalysis.Analyzer {
 
     private var lastRun = 0L
+    private var frames = 0L
     private var scratch: ByteArray? = null
 
     override fun analyze(image: ImageProxy) {
@@ -33,7 +37,7 @@ class DocumentAnalyzer(private val onResult: (FrameDetection) -> Unit) : ImageAn
             val rotation = image.imageInfo.rotationDegrees
             val upright = corners?.let { rotate(it, rotation) }
             val (w, h) = if (rotation % 180 == 0) image.width to image.height else image.height to image.width
-            onResult(FrameDetection(upright, w, h))
+            onResult(FrameDetection(upright, w, h, ++frames))
         } catch (e: Throwable) {
             // A failed frame is simply skipped.
         } finally {

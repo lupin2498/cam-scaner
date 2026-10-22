@@ -2,6 +2,7 @@ package com.camscaner.app.ui.camera
 
 import android.Manifest
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -68,7 +69,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.neverEqualPolicy
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -113,10 +113,18 @@ fun CameraScreen(session: ScanSessionViewModel, onClose: () -> Unit, onDone: () 
     LightSystemBarIcons()
     fun granted() = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
     var hasPermission by remember { mutableStateOf(granted()) }
-    var asked by remember { mutableStateOf(false) }
-    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
-        hasPermission = it
-        asked = true
+    val activity = context as? Activity
+    fun rationale() = activity != null &&
+        ActivityCompat.shouldShowRequestPermissionRationale(activity, Manifest.permission.CAMERA)
+    // Android only says "show a rationale" after an explicit denial; once that flag drops back to
+    // false on a denial, the system dialog will not appear any more. A dismissed dialog keeps it.
+    val prefs = remember { context.getSharedPreferences(PERMISSION_PREFS, Context.MODE_PRIVATE) }
+    var blocked by remember { mutableStateOf(false) }
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+        hasPermission = ok
+        val rationaleNow = rationale()
+        if (!ok && rationaleNow) prefs.edit().putBoolean(KEY_DENIED_ONCE, true).apply()
+        blocked = !ok && !rationaleNow && prefs.getBoolean(KEY_DENIED_ONCE, false)
     }
     LaunchedEffect(Unit) {
         if (!hasPermission) permissionLauncher.launch(Manifest.permission.CAMERA)
@@ -127,9 +135,6 @@ fun CameraScreen(session: ScanSessionViewModel, onClose: () -> Unit, onDone: () 
         onPauseOrDispose { }
     }
     fun requestPermission() {
-        val activity = context as? Activity
-        val blocked = asked && activity != null &&
-            !ActivityCompat.shouldShowRequestPermissionRationale(activity, Manifest.permission.CAMERA)
         if (blocked) {
             // denied permanently: the system no longer shows the dialog
             context.startActivity(
@@ -159,7 +164,7 @@ fun CameraScreen(session: ScanSessionViewModel, onClose: () -> Unit, onDone: () 
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         if (hasPermission) {
-            CameraContent(session, close, onDone)
+            CameraContent(session, close, onDone, paused = confirmClose)
         } else {
             Column(
                 Modifier.align(Alignment.Center).padding(32.dp),
@@ -183,15 +188,16 @@ fun CameraScreen(session: ScanSessionViewModel, onClose: () -> Unit, onDone: () 
 private enum class FlashState { OFF, AUTO, ON, TORCH }
 
 @Composable
-private fun CameraContent(session: ScanSessionViewModel, onClose: () -> Unit, onDone: () -> Unit) {
+private fun CameraContent(session: ScanSessionViewModel, onClose: () -> Unit, onDone: () -> Unit, paused: Boolean) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val settings = context.scannerApp.settings
     val scope = rememberCoroutineScope()
     val primary = MaterialTheme.colorScheme.primary
 
-    // every analysed frame must reach the tracker, also when it equals the previous one
-    var detection by remember { mutableStateOf<FrameDetection?>(null, neverEqualPolicy()) }
+    // every analysed frame must reach the tracker; results carry a frame number so equal
+    // detections still restart the effect below
+    var detection by remember { mutableStateOf<FrameDetection?>(null) }
     var flash by remember { mutableStateOf(FlashState.OFF) }
     var capturing by remember { mutableStateOf(false) }
     var holdProgress by remember { mutableFloatStateOf(0f) }
@@ -320,9 +326,10 @@ private fun CameraContent(session: ScanSessionViewModel, onClose: () -> Unit, on
     LaunchedEffect(detection) {
         val progress = tracker.update(detection?.corners)
         holdProgress = progress
-        // not behind the photo picker or while an import runs: the screen is not what the user sees
+        // not behind the photo picker, the discard dialog or an import: the user is busy with those
         val visible = lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
-        if (settings.autoCapture && progress >= 1f && !capturing && !pickerOpen && !session.importing && visible) {
+        val blocked = paused || pickerOpen || session.importing || !visible
+        if (settings.autoCapture && progress >= 1f && !capturing && !blocked) {
             capture()
         }
     }
@@ -530,3 +537,6 @@ private fun ShutterButton(label: String, progress: Float, busy: Boolean, enabled
 }
 
 private const val TAG = "CameraScreen"
+
+private const val PERMISSION_PREFS = "camera_permission"
+private const val KEY_DENIED_ONCE = "denied_once"
