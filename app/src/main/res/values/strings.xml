@@ -16,6 +16,7 @@
     <string name="close">Đóng</string>
     <string name="copy">Sao chép</string>
     <string name="processing">Đang xử lý…</string>
+    <string name="import_failed">Không đọc được %1$d ảnh</string>
     <string name="error_generic">Đã xảy ra lỗi: %1$s</string>
     <string name="pages_count">%1$d trang</string>
 
@@ -45,6 +46,9 @@
     <string name="camera_hint_searching">Đưa tài liệu vào khung hình</string>
     <string name="camera_hint_found">Đã nhận diện tài liệu</string>
     <string name="camera_hint_hold">Giữ yên máy…</string>
+    <string name="camera_discard_title">Bỏ các trang đã chụp?</string>
+    <string name="camera_discard">Bỏ</string>
+    <string name="camera_unavailable">Không mở được camera. Bạn vẫn có thể nhập ảnh từ thư viện.</string>
     <string name="camera_capture">Chụp</string>
     <string name="camera_capture_failed">Chụp ảnh thất bại</string>
 
@@ -89,6 +93,7 @@
     <string name="page_recrop">Cắt lại</string>
     <string name="page_filter">Bộ lọc</string>
     <string name="page_rotate">Xoay</string>
+    <string name="page_rotating">Đang xoay trang…</string>
     <string name="page_ocr">Nhận dạng chữ</string>
     <string name="page_delete_title">Xóa trang này?</string>
 
@@ -155,4 +160,8 @@
     <string name="settings_auto_crop">Tự động cắt mép giấy</string>
     <string name="settings_auto_crop_desc">Tắt để luôn giữ toàn bộ ảnh</string>
     <string name="settings_about">Phiên bản %1$s · Không quảng cáo · Không hình mờ</string>
+    <plurals name="camera_discard_message">
+        <item quantity="one">%1$d trang chưa lưu sẽ bị xoá.</item>
+        <item quantity="other">%1$d trang chưa lưu sẽ bị xoá.</item>
+    </plurals>
 </resources>

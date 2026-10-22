@@ -4,7 +4,6 @@ import android.net.Uri
 import android.util.Log
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -26,7 +25,6 @@ import com.camscaner.app.ui.home.HomeScreen
 import com.camscaner.app.ui.ocr.OcrScreen
 import com.camscaner.app.ui.page.PageViewerScreen
 import com.camscaner.app.ui.settings.SettingsScreen
-import kotlinx.coroutines.launch
 
 object Routes {
     const val HOME = "home"
@@ -49,16 +47,20 @@ object Routes {
 fun AppNavigation(sharedUris: List<Uri>, onSharedConsumed: () -> Unit) {
     val nav = rememberNavController()
     val session: ScanSessionViewModel = viewModel()
-    val scope = rememberCoroutineScope()
 
     val lifecycle = LocalLifecycleOwner.current.lifecycle
 
     fun importAndCrop(docId: String?, returnRoute: String?, uris: List<Uri>) {
-        scope.launch {
-            session.start(docId, returnRoute)
-            session.importUris(uris)
-            // the import can outlive the screen; only navigate while the activity is visible
-            if (session.pages.isNotEmpty()) lifecycle.withStarted { nav.navigate(Routes.CROP) }
+        session.start(docId, returnRoute)
+        session.import(uris)
+    }
+
+    LaunchedEffect(session.cropReady) {
+        // the import can outlive the screen (or the activity); only navigate while it is visible
+        if (session.cropReady) {
+            lifecycle.withStarted {
+                if (session.consumeCropReady()) nav.navigate(Routes.CROP) { launchSingleTop = true }
+            }
         }
     }
 

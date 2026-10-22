@@ -66,10 +66,7 @@ object PageProcessor {
         adjustments: Adjustments,
         maxDim: Int = MAX_PAGE,
     ): Bitmap {
-        val warped = warp(original, corners, maxDim)
-        val enhanced = if (filter == ScanFilter.ORIGINAL && adjustments.isNeutral) warped
-        else ImageEnhancer.enhance(warped, filter, adjustments).also { warped.recycle() }
-        return ImageIO.rotate(enhanced, rotation)
+        return enhanceAndRotate(warp(original, corners, maxDim), rotation, filter, adjustments)
     }
 
     fun render(
@@ -82,10 +79,18 @@ object PageProcessor {
     ): Bitmap {
         val original = ImageIO.decodeSampled(originalFile, ImageIO.MAX_ORIGINAL)
             ?: error("Cannot decode ${originalFile.name}")
-        return try {
-            render(original, corners, rotation, filter, adjustments, maxDim)
+        // the full-size original is released before enhancement, which needs most of the memory
+        val warped = try {
+            warp(original, corners, maxDim)
         } finally {
             original.recycle()
         }
+        return enhanceAndRotate(warped, rotation, filter, adjustments)
+    }
+
+    private fun enhanceAndRotate(warped: Bitmap, rotation: Int, filter: ScanFilter, adjustments: Adjustments): Bitmap {
+        val enhanced = if (filter == ScanFilter.ORIGINAL && adjustments.isNeutral) warped
+        else ImageEnhancer.enhance(warped, filter, adjustments).also { warped.recycle() }
+        return ImageIO.rotate(enhanced, rotation)
     }
 }

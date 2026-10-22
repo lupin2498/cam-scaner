@@ -8,6 +8,7 @@ import android.net.Uri
 import androidx.exifinterface.media.ExifInterface
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -29,24 +30,28 @@ object ImageIO {
 
     /** Applies EXIF rotation, limits resolution and rewrites [source] as a plain JPEG at [target]. */
     fun normalize(source: File, target: File, maxDim: Int = MAX_ORIGINAL): Pair<Int, Int> {
-        val rotation = exifRotation(source)
+        val transform = exifTransform(source)
         var bitmap = decodeSampled(source, maxDim) ?: error("Unsupported image")
-        if (rotation != 0) bitmap = rotate(bitmap, rotation)
+        if (transform != null) bitmap = transform(bitmap, transform)
         saveJpeg(bitmap, target, 95)
         val size = bitmap.width to bitmap.height
         bitmap.recycle()
         return size
     }
 
-    fun exifRotation(file: File): Int = try {
-        when (ExifInterface(file.absolutePath).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)) {
-            ExifInterface.ORIENTATION_ROTATE_90 -> 90
-            ExifInterface.ORIENTATION_ROTATE_180 -> 180
-            ExifInterface.ORIENTATION_ROTATE_270 -> 270
-            else -> 0
+    /** Rotation and mirroring stored in the EXIF orientation tag, or null for an upright image. */
+    fun exifTransform(file: File): Matrix? = try {
+        val exif = ExifInterface(file.absolutePath)
+        val degrees = exif.rotationDegrees
+        val flipped = exif.isFlipped
+        if (degrees == 0 && !flipped) null
+        // rotationDegrees assumes the mirror is applied first, then the rotation
+        else Matrix().apply {
+            if (flipped) setScale(-1f, 1f)
+            postRotate(degrees.toFloat())
         }
     } catch (e: Exception) {
-        0
+        null
     }
 
     fun readSize(file: File): Pair<Int, Int> {
@@ -90,16 +95,25 @@ object ImageIO {
     fun rotate(bitmap: Bitmap, degrees: Int): Bitmap {
         val d = ((degrees % 360) + 360) % 360
         if (d == 0) return bitmap
-        val m = Matrix().apply { postRotate(d.toFloat()) }
-        val rotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, m, true)
-        if (rotated !== bitmap) bitmap.recycle()
-        return rotated
+        return transform(bitmap, Matrix().apply { postRotate(d.toFloat()) })
+    }
+
+    private fun transform(bitmap: Bitmap, matrix: Matrix): Bitmap {
+        val result = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+        if (result !== bitmap) bitmap.recycle()
+        return result
     }
 
     fun saveJpeg(bitmap: Bitmap, file: File, quality: Int) {
         file.parentFile?.mkdirs()
         val tmp = File(file.parentFile, file.name + ".tmp")
-        FileOutputStream(tmp).use { bitmap.compress(Bitmap.CompressFormat.JPEG, quality, it) }
+        // compress() reports write errors (e.g. a full disk) only through its result; never let a
+        // truncated file replace a good one
+        val ok = FileOutputStream(tmp).use { bitmap.compress(Bitmap.CompressFormat.JPEG, quality, it) }
+        if (!ok || tmp.length() == 0L) {
+            tmp.delete()
+            throw IOException("Cannot write ${file.name}")
+        }
         if (!tmp.renameTo(file)) {
             tmp.copyTo(file, overwrite = true)
             tmp.delete()

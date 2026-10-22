@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -51,6 +53,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -82,10 +85,12 @@ import com.camscaner.app.ui.components.BackButton
 import com.camscaner.app.ui.components.FileImage
 import com.camscaner.app.ui.components.ProgressDialog
 import com.camscaner.app.ui.components.SectionTitle
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 class ExportViewModel(app: Application, handle: SavedStateHandle) : AndroidViewModel(app) {
@@ -137,6 +142,7 @@ class ExportViewModel(app: Application, handle: SavedStateHandle) : AndroidViewM
 fun ExportScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val vm: ExportViewModel = viewModel()
+    val scope = rememberCoroutineScope()
     val document by vm.document.collectAsState()
     val doc = document ?: return
     val o = vm.options
@@ -145,9 +151,11 @@ fun ExportScreen(onBack: () -> Unit) {
     val saveLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
         val file = vm.result
         if (uri != null && file != null) {
-            runCatching { Share.copyToUri(context, file, uri) }
-                .onSuccess { Toast.makeText(context, R.string.export_saved, Toast.LENGTH_SHORT).show() }
-                .onFailure { Toast.makeText(context, context.getString(R.string.error_generic, it.message), Toast.LENGTH_LONG).show() }
+            scope.launch {
+                runCatching { withContext(Dispatchers.IO) { Share.copyToUri(context, file, uri) } }
+                    .onSuccess { Toast.makeText(context, R.string.export_saved, Toast.LENGTH_SHORT).show() }
+                    .onFailure { Toast.makeText(context, context.getString(R.string.error_generic, it.message), Toast.LENGTH_LONG).show() }
+            }
         }
     }
 
@@ -173,7 +181,9 @@ fun ExportScreen(onBack: () -> Unit) {
         },
     ) { padding ->
         Column(
-            Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
+            // edge-to-edge: keep the focused password / watermark field above the keyboard
+            Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()
+                .verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
         ) {
             vm.result?.let { file ->
                 ResultCard(

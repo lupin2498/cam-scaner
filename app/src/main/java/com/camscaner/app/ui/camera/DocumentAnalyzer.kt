@@ -64,6 +64,9 @@ class StabilityTracker(private val holdMillis: Long = 1200L) {
     private var last: Corners? = null
     private var stableSince = 0L
     private var armed = true
+    /** Outline of the page captured last, while disarmed. */
+    private var captured: Corners? = null
+    private var missingSince = 0L
 
     /** Returns progress in [0, 1]; 1 means "capture now". */
     fun update(corners: Corners?, now: Long = SystemClock.elapsedRealtime()): Float {
@@ -71,25 +74,51 @@ class StabilityTracker(private val holdMillis: Long = 1200L) {
         last = corners
         if (corners == null || corners.area() < MIN_AREA) {
             stableSince = 0L
-            armed = true
+            // after a capture, a dropped frame (focus hunting, exposure change) is not a new page;
+            // the page has to be gone for a while
+            if (!armed) {
+                if (missingSince == 0L) missingSince = now
+                if (now - missingSince >= REARM_MISSING_MS) rearm()
+            }
             return 0f
+        }
+        missingSince = 0L
+        if (!armed) {
+            // re-arm only once a clearly different page (or position) is in view
+            val shot = captured
+            if (shot != null && corners.maxDistanceTo(shot) <= REARM_DISTANCE) return 0f
+            rearm()
         }
         if (previous == null || corners.maxDistanceTo(previous) > MAX_JITTER) {
             stableSince = now
-            armed = true
             return 0f
         }
-        if (!armed) return 0f
+        if (stableSince == 0L) {
+            stableSince = now
+            return 0f
+        }
         return ((now - stableSince).toFloat() / holdMillis).coerceIn(0f, 1f)
     }
 
     /** Called after a capture: the document has to move (next page) before the next one. */
     fun disarm() {
         armed = false
+        captured = last
+        missingSince = 0L
+        stableSince = 0L
+    }
+
+    private fun rearm() {
+        armed = true
+        captured = null
+        missingSince = 0L
+        stableSince = 0L
     }
 
     private companion object {
         const val MIN_AREA = 0.18f
         const val MAX_JITTER = 0.025f
+        const val REARM_DISTANCE = 0.1f
+        const val REARM_MISSING_MS = 600L
     }
 }

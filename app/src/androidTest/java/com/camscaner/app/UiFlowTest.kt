@@ -5,6 +5,7 @@ import android.content.Intent
 import android.util.Log
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.isEnabled
 import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.printToString
 import androidx.compose.ui.test.hasContentDescription
@@ -76,6 +77,10 @@ class UiFlowTest {
 
     private fun ComposeTestRule.waitDescription(text: String, timeout: Long = 20_000) =
         waitOrDump(hasContentDescription(text), "description '$text'", timeout)
+
+    /** The shutter is disabled until the camera is bound. */
+    private fun waitShutterReady() =
+        compose.waitOrDump(hasContentDescription(str(R.string.camera_capture)) and isEnabled(), "shutter enabled", 30_000)
 
     /** Waits for a node; on timeout saves a screenshot and the semantics tree for the CI log. */
     private fun ComposeTestRule.waitOrDump(matcher: SemanticsMatcher, what: String, timeout: Long) {
@@ -216,9 +221,9 @@ class UiFlowTest {
         compose.waitDescription(str(R.string.home_scan))
         compose.onNodeWithContentDescription(str(R.string.home_scan)).performClick()
         compose.waitText(str(R.string.camera_mode_batch))
-        Thread.sleep(3000)
+        waitShutterReady()
+        Thread.sleep(1500)
         shot("12_camera")
-        compose.waitDescription(str(R.string.camera_capture))
         compose.onNodeWithContentDescription(str(R.string.camera_capture)).performClick()
         compose.waitText(str(R.string.crop_auto), 30_000)
         Thread.sleep(1000)
@@ -321,8 +326,7 @@ class UiFlowTest {
         compose.onNodeWithText("Them trang").performClick()
         compose.waitText(str(R.string.doc_add_camera))
         compose.onNodeWithText(str(R.string.doc_add_camera)).performClick()
-        compose.waitDescription(str(R.string.camera_capture))
-        Thread.sleep(2500)
+        waitShutterReady()
         compose.onNodeWithContentDescription(str(R.string.camera_capture)).performClick()
         compose.waitText(str(R.string.crop_auto), 30_000)
         compose.onAllNodesWithText(str(R.string.next)).onFirst().performClick()

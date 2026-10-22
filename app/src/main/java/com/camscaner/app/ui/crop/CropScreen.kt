@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -59,6 +60,7 @@ import com.camscaner.app.scanner.Corners
 import com.camscaner.app.scanner.ImageIO
 import com.camscaner.app.ui.ScanSessionViewModel
 import com.camscaner.app.ui.components.BackButton
+import com.camscaner.app.ui.components.LightSystemBarIcons
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -66,6 +68,7 @@ import kotlinx.coroutines.withContext
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CropScreen(session: ScanSessionViewModel, onBack: () -> Unit, onNext: () -> Unit) {
+    LightSystemBarIcons()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
@@ -81,6 +84,8 @@ fun CropScreen(session: ScanSessionViewModel, onBack: () -> Unit, onNext: () -> 
     BackHandler(onBack = onBack)
 
     val image by produceState<ImageBitmap?>(null, page.originalFile) {
+        // never show the previous page's photo under this page's outline
+        value = null
         value = withContext(Dispatchers.IO) { ImageIO.decodeSampled(page.originalFile, 1600)?.asImageBitmap() }
     }
     val invalidMessage = stringResource(R.string.crop_invalid)
@@ -130,36 +135,36 @@ fun CropScreen(session: ScanSessionViewModel, onBack: () -> Unit, onNext: () -> 
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
-                if (pages.size > 1) {
-                    IconButton(
-                        onClick = { session.currentIndex = (index - 1).coerceAtLeast(0) },
-                        enabled = index > 0,
-                        modifier = Modifier.align(Alignment.CenterStart),
-                    ) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, null, tint = Color.White) }
-                    IconButton(
-                        onClick = { session.currentIndex = (index + 1).coerceAtMost(pages.lastIndex) },
-                        enabled = index < pages.lastIndex,
-                        modifier = Modifier.align(Alignment.CenterEnd),
-                    ) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = Color.White) }
-                }
             }
 
             if (pages.size > 1) {
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxWidth().height(72.dp),
-                ) {
-                    itemsIndexed(pages, key = { _, p -> p.id }) { i, p ->
-                        AsyncImage(
-                            model = p.originalFile,
-                            contentDescription = null,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.size(52.dp, 68.dp).clip(RoundedCornerShape(6.dp))
-                                .border(2.dp, if (i == index) MaterialTheme.colorScheme.primary else Color.Transparent, RoundedCornerShape(6.dp))
-                                .clickable { session.currentIndex = i },
-                        )
+                // page arrows live beside the strip: over the photo they would cover the edge handles
+                Row(Modifier.fillMaxWidth().height(72.dp), verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = { session.currentIndex = (index - 1).coerceAtLeast(0) },
+                        enabled = index > 0,
+                    ) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, null, tint = Color.White) }
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                    ) {
+                        itemsIndexed(pages, key = { _, p -> p.id }) { i, p ->
+                            AsyncImage(
+                                model = p.originalFile,
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.size(52.dp, 68.dp).clip(RoundedCornerShape(6.dp))
+                                    .border(2.dp, if (i == index) MaterialTheme.colorScheme.primary else Color.Transparent, RoundedCornerShape(6.dp))
+                                    .clickable { session.currentIndex = i },
+                            )
+                        }
                     }
+                    IconButton(
+                        onClick = { session.currentIndex = (index + 1).coerceAtMost(pages.lastIndex) },
+                        enabled = index < pages.lastIndex,
+                    ) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = Color.White) }
                 }
             }
 

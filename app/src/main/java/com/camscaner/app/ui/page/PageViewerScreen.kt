@@ -23,7 +23,6 @@ import androidx.compose.material.icons.filled.Crop
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.Rotate90DegreesCw
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -57,8 +56,10 @@ import com.camscaner.app.data.ScanDocument
 import com.camscaner.app.data.ScanPage
 import com.camscaner.app.ui.components.BackButton
 import com.camscaner.app.ui.components.ConfirmDialog
+import com.camscaner.app.ui.components.ProgressDialog
 import com.camscaner.app.ui.components.FileImage
 import com.camscaner.app.ui.crop.ToolButton
+import com.camscaner.app.ui.components.LightSystemBarIcons
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -71,6 +72,8 @@ class PageViewerViewModel(app: Application, handle: SavedStateHandle) : AndroidV
 
     val document: StateFlow<ScanDocument?> =
         repository.observe(docId).stateIn(viewModelScope, SharingStarted.Eagerly, repository.get(docId))
+
+    val loaded: StateFlow<Boolean> = repository.loaded
 
     var rotating by mutableStateOf(false)
         private set
@@ -106,12 +109,15 @@ fun PageViewerScreen(
     onFilter: (docId: String, pageId: String) -> Unit,
     onOcr: (docId: String, pageId: String) -> Unit,
 ) {
+    LightSystemBarIcons()
     val vm: PageViewerViewModel = viewModel()
     val document by vm.document.collectAsState()
     val doc = document
     val pages = doc?.pages.orEmpty()
-    LaunchedEffect(pages.isEmpty()) {
-        if (pages.isEmpty()) onBack()
+    val loaded by vm.loaded.collectAsState()
+    // after process death the documents are still loading on the first frames
+    LaunchedEffect(pages.isEmpty(), loaded) {
+        if (pages.isEmpty() && loaded) onBack()
     }
     if (doc == null || pages.isEmpty()) return
 
@@ -165,9 +171,8 @@ fun PageViewerScreen(
                 ToolButton(Icons.Filled.DeleteOutline, stringResource(R.string.delete)) { confirmDelete = current }
             }
         }
-        if (vm.rotating) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-        }
+        // blocks the toolbar: editing or deleting the page mid-rotation would race with the re-render
+        if (vm.rotating) ProgressDialog(message = stringResource(R.string.page_rotating))
     }
 
     confirmDelete?.let { page ->

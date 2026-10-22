@@ -93,8 +93,9 @@ object ImageEnhancer {
     private fun MatScope.blackAndWhite(rgb: Mat, adjustments: Adjustments): Mat {
         val gray = mat()
         Imgproc.cvtColor(flatten(rgb), gray, Imgproc.COLOR_RGB2GRAY)
-        // Brightness / contrast move the binarization thresholds instead of graying the result.
-        val g = adjust(gray, adjustments.copy(sharpness = 0f))
+        // Brightness / contrast move the binarization thresholds instead of graying the result;
+        // sharpening before thresholding keeps thin strokes crisp.
+        val g = adjust(gray, adjustments)
         Imgproc.GaussianBlur(g, g, Size(3.0, 3.0), 0.0)
         val otsu = Imgproc.threshold(g, mat(), 0.0, 255.0, Imgproc.THRESH_BINARY or Imgproc.THRESH_OTSU)
         val block = odd(max(15, max(g.cols(), g.rows()) / 40))

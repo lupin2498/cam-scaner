@@ -5,9 +5,11 @@ import android.graphics.Color
 import com.camscaner.app.data.DocumentRepository
 import com.camscaner.app.data.ScanDocument
 import com.camscaner.app.ocr.OcrEngine
+import com.camscaner.app.ocr.OcrLine
 import com.camscaner.app.scanner.ImageIO
 import com.camscaner.app.scanner.ScanFilter
 import com.tom_roush.pdfbox.cos.COSName
+import com.tom_roush.pdfbox.io.MemoryUsageSetting
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPage
 import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
@@ -57,7 +59,10 @@ class PdfExporter(private val repository: DocumentRepository) {
             margin = options.margin,
             mergeIdCards = options.mergeIdCards,
         )
-        PDDocument().use { pdf ->
+        // image streams are buffered in a scratch file next to the output instead of the Java heap,
+        // so long documents do not run out of memory
+        val memory = MemoryUsageSetting.setupMixed(SCRATCH_MEMORY).setTempDir(output.parentFile ?: output.absoluteFile.parentFile)
+        PDDocument(memory).use { pdf ->
             pdf.documentInformation.apply {
                 title = options.fileName
                 creator = CREATOR
@@ -141,29 +146,44 @@ class PdfExporter(private val repository: DocumentRepository) {
         } finally {
             bitmap.recycle()
         }
-        for (line in result.lines) {
-            val text = printable(line.text, font, glyphCache)
-            if (text.isBlank()) continue
-            val boxW = line.box.width() * item.width
-            val boxH = line.box.height() * item.height
-            if (boxW <= 1f || boxH <= 1f) continue
-            val fontSize = boxH * 0.85f
-            val textWidth = try {
-                font.getStringWidth(text) / 1000f * fontSize
-            } catch (e: Exception) {
-                continue
-            }
-            if (textWidth <= 0f) continue
-            val x = item.x + line.box.left * item.width
-            val baseline = item.y + (1f - line.box.bottom) * item.height + boxH * 0.18f
-            cs.beginText()
-            cs.setFont(font, fontSize)
-            cs.setRenderingMode(RenderingMode.NEITHER)
-            cs.setHorizontalScaling(boxW / textWidth * 100f)
-            cs.newLineAtOffset(x, baseline)
-            cs.showText(text)
-            cs.endText()
+        // rendering mode and horizontal scaling are graphics state, not reset by BT/ET: keep them
+        // from leaking into the watermark and page number drawn afterwards
+        cs.saveGraphicsState()
+        try {
+            for (line in result.lines) drawInvisibleLine(cs, font, glyphCache, line, item)
+        } finally {
+            cs.restoreGraphicsState()
         }
+    }
+
+    private fun drawInvisibleLine(
+        cs: PDPageContentStream,
+        font: PDFont,
+        glyphCache: MutableMap<Char, Boolean>,
+        line: OcrLine,
+        item: Placement,
+    ) {
+        val text = printable(line.text, font, glyphCache)
+        if (text.isBlank()) return
+        val boxW = line.box.width() * item.width
+        val boxH = line.box.height() * item.height
+        if (boxW <= 1f || boxH <= 1f) return
+        val fontSize = boxH * 0.85f
+        val textWidth = try {
+            font.getStringWidth(text) / 1000f * fontSize
+        } catch (e: Exception) {
+            return
+        }
+        if (textWidth <= 0f) return
+        val x = item.x + line.box.left * item.width
+        val baseline = item.y + (1f - line.box.bottom) * item.height + boxH * 0.18f
+        cs.beginText()
+        cs.setFont(font, fontSize)
+        cs.setRenderingMode(RenderingMode.NEITHER)
+        cs.setHorizontalScaling(boxW / textWidth * 100f)
+        cs.newLineAtOffset(x, baseline)
+        cs.showText(text)
+        cs.endText()
     }
 
     private fun drawWatermark(cs: PDPageContentStream, font: PDFont, glyphCache: MutableMap<Char, Boolean>, sheet: Sheet, raw: String) {
@@ -246,6 +266,7 @@ class PdfExporter(private val repository: DocumentRepository) {
     companion object {
         private const val CREATOR = "Cam Scaner"
         private const val OCR_MAX_DIM = 2400
+        private const val SCRATCH_MEMORY = 48L * 1024 * 1024
         private val FONT_CANDIDATES = listOf(
             "/system/fonts/NotoSans-Regular.ttf",
             "/system/fonts/Roboto-Regular.ttf",

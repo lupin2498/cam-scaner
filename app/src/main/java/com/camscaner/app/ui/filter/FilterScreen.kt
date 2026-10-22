@@ -70,23 +70,43 @@ import com.camscaner.app.ui.Share
 import com.camscaner.app.ui.components.BackButton
 import com.camscaner.app.ui.components.ProgressDialog
 import com.camscaner.app.ui.crop.ToolButton
+import com.camscaner.app.ui.components.LightSystemBarIcons
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FilterScreen(session: ScanSessionViewModel, onBack: () -> Unit, onSaved: (docId: String) -> Unit) {
     val context = LocalContext.current
+    LightSystemBarIcons()
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
     val vm: FilterViewModel = viewModel()
     val snackbar = remember { SnackbarHostState() }
     val pages = session.pages
     var showAdjust by remember { mutableStateOf(false) }
-    var saving by remember { mutableStateOf(false) }
 
     LaunchedEffect(pages.size) {
-        if (pages.isEmpty() && !saving) onBack()
+        // pages are also cleared by a successful save, which navigates on its own
+        if (pages.isEmpty() && !session.saving) onBack()
     }
+    LaunchedEffect(session.savedDocId) {
+        // navigation must happen on the main thread and while the activity is visible
+        if (session.savedDocId != null) {
+            lifecycleOwner.lifecycle.withStarted { session.consumeSaved()?.let(onSaved) }
+        }
+    }
+    LaunchedEffect(session.saveError) {
+        val e = session.consumeSaveError() ?: return@LaunchedEffect
+        Log.e(TAG, "Saving pages failed", e)
+        Toast.makeText(
+            context,
+            context.getString(R.string.error_generic, e.message ?: e.javaClass.simpleName),
+            Toast.LENGTH_LONG,
+        ).show()
+    }
+    // always intercept Back: while saving it must not pop the screen under the progress overlay
+    BackHandler { if (!session.saving) onBack() }
+
     if (pages.isEmpty()) {
         // pages are cleared right after saving, while navigation to the document happens
         Box(Modifier.fillMaxSize().background(Color(0xFF101312)), contentAlignment = Alignment.Center) {
@@ -97,35 +117,13 @@ fun FilterScreen(session: ScanSessionViewModel, onBack: () -> Unit, onSaved: (do
     val index = session.currentIndex.coerceIn(0, pages.lastIndex)
     val page = pages[index]
 
-    BackHandler(enabled = !saving, onBack = onBack)
-
     LaunchedEffect(page) {
         vm.render(page)
         vm.renderThumbnails(page)
     }
     val appliedAll = stringResource(R.string.filter_applied_all)
 
-    fun save() {
-        if (saving) return
-        saving = true
-        scope.launch {
-            runCatching { session.save(Share.defaultDocumentName(context)) }
-                // Navigation must happen on the main thread and while the activity is visible;
-                // the coroutine may resume elsewhere after the background save. `saving` stays
-                // true so the "no pages left" effect above does not pop the opened document.
-                .onSuccess { id -> lifecycleOwner.lifecycle.withStarted { onSaved(id) } }
-                .onFailure { e ->
-                    saving = false
-                    Log.e(TAG, "Saving pages failed", e)
-                    // a toast still shows if the page list was already cleared
-                    Toast.makeText(
-                        context,
-                        context.getString(R.string.error_generic, e.message ?: e.javaClass.simpleName),
-                        Toast.LENGTH_LONG,
-                    ).show()
-                }
-        }
-    }
+    fun save() = session.save(Share.defaultDocumentName(context))
 
     Scaffold(
         containerColor = Color(0xFF101312),
@@ -138,7 +136,7 @@ fun FilterScreen(session: ScanSessionViewModel, onBack: () -> Unit, onSaved: (do
                         else stringResource(R.string.filter_title)
                     )
                 },
-                navigationIcon = { BackButton(onBack) },
+                navigationIcon = { BackButton { if (!session.saving) onBack() } },
                 actions = {
                     IconButton(onClick = ::save) { Icon(Icons.Filled.Check, stringResource(R.string.save)) }
                 },

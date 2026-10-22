@@ -65,7 +65,7 @@ class SettingsRepository(context: Context) {
         margin = enumOr(prefs.getString(KEY_PDF_MARGIN, null), PageMargin.NONE),
         quality = enumOr(prefs.getString(KEY_PDF_QUALITY, null), PdfQuality.HIGH),
         ocrLayer = prefs.getBoolean(KEY_PDF_OCR, false),
-        mergeIdCards = prefs.getBoolean(KEY_PDF_ID, true),
+        mergeIdCards = prefs.getBoolean(KEY_PDF_ID, false),
         pageNumbers = prefs.getBoolean(KEY_PDF_NUMBERS, false),
         watermark = prefs.getString(KEY_PDF_WATERMARK, "").orEmpty(),
     )

@@ -73,19 +73,28 @@ class DocumentRepository(context: Context) {
         onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
     ): String = withContext(Dispatchers.Default) {
         val id = docId ?: newId()
-        val rendered = drafts.mapIndexed { index, draft ->
-            val pageId = draft.existingPageId ?: newId()
-            val original = originalFile(id, pageId)
-            if (draft.originalFile.absolutePath != original.absolutePath) {
-                original.parentFile?.mkdirs()
-                draft.originalFile.copyTo(original, overwrite = true)
+        val isNew = docId == null
+        val addedPages = ArrayList<String>()
+        val rendered = try {
+            drafts.mapIndexed { index, draft ->
+                val pageId = draft.existingPageId ?: newId().also { addedPages += it }
+                val original = originalFile(id, pageId)
+                if (draft.originalFile.absolutePath != original.absolutePath) {
+                    original.parentFile?.mkdirs()
+                    draft.originalFile.copyTo(original, overwrite = true)
+                }
+                val page = renderPage(
+                    id,
+                    ScanPage(pageId, draft.corners, draft.rotation, draft.filter, draft.adjustments)
+                )
+                onProgress(index + 1, drafts.size)
+                page
             }
-            val page = renderPage(
-                id,
-                ScanPage(pageId, draft.corners, draft.rotation, draft.filter, draft.adjustments)
-            )
-            onProgress(index + 1, drafts.size)
-            page
+        } catch (e: Throwable) {
+            // nothing references the copied originals yet; do not leave megabytes behind on every retry
+            if (isNew) docDir(id).deleteRecursively()
+            else addedPages.forEach { pageDir(id, it).deleteRecursively() }
+            throw e
         }
         mutex.withLock {
             val now = System.currentTimeMillis()

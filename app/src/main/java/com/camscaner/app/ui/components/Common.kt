@@ -1,6 +1,8 @@
 package com.camscaner.app.ui.components
 
+import android.app.Activity
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -24,6 +26,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -34,13 +37,44 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import androidx.core.view.WindowCompat
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.camscaner.app.R
 import java.io.File
+
+/** Dark full-bleed screens currently shown; system bar icons are light while any is. */
+private var darkScreens = 0
+
+/**
+ * Light status and navigation bar icons while a dark, full-bleed screen (camera, crop, filter,
+ * page viewer) is shown; the theme's own icons come back when the last one leaves.
+ */
+@Composable
+fun LightSystemBarIcons() {
+    val view = LocalView.current
+    val darkTheme = isSystemInDarkTheme()
+    if (view.isInEditMode) return
+    DisposableEffect(view, darkTheme) {
+        val window = (view.context as? Activity)?.window
+        val controller = window?.let { WindowCompat.getInsetsController(it, view) }
+        darkScreens++
+        controller?.isAppearanceLightStatusBars = false
+        controller?.isAppearanceLightNavigationBars = false
+        onDispose {
+            darkScreens--
+            // screens cross-fade, so the next dark screen may already be counted
+            if (darkScreens == 0) {
+                controller?.isAppearanceLightStatusBars = !darkTheme
+                controller?.isAppearanceLightNavigationBars = !darkTheme
+            }
+        }
+    }
+}
 
 @Composable
 fun BackButton(onClick: () -> Unit) {

@@ -1,6 +1,7 @@
 package com.camscaner.app.ui.filter
 
 import android.graphics.Bitmap
+import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -13,6 +14,7 @@ import com.camscaner.app.scanner.ImageEnhancer
 import com.camscaner.app.scanner.ImageIO
 import com.camscaner.app.scanner.PageProcessor
 import com.camscaner.app.scanner.ScanFilter
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -42,40 +44,61 @@ class FilterViewModel : ViewModel() {
 
     fun render(page: DraftPage) {
         val key = "${page.id}|${page.corners}|${page.rotation}|${page.filter}|${page.adjustments}"
-        if (key == previewKey && preview != null) return
+        // a render for an intermediate state may still be running; it must not overwrite the
+        // preview once the page is back to the state already shown
         previewJob?.cancel()
+        if (key == previewKey && preview != null) {
+            busy = false
+            return
+        }
         previewJob = viewModelScope.launch {
             busy = true
             delay(40) // coalesce slider updates
-            val bitmap = withContext(Dispatchers.Default) {
-                val warped = warped(page, PREVIEW_SIZE)
-                val enhanced = if (page.filter == ScanFilter.ORIGINAL && page.adjustments.isNeutral) {
-                    warped.copy(Bitmap.Config.ARGB_8888, false)
-                } else {
-                    ImageEnhancer.enhance(warped, page.filter, page.adjustments)
+            try {
+                val bitmap = withContext(Dispatchers.Default) {
+                    val warped = warped(page, PREVIEW_SIZE)
+                    val enhanced = if (page.filter == ScanFilter.ORIGINAL && page.adjustments.isNeutral) {
+                        warped.copy(Bitmap.Config.ARGB_8888, false)
+                    } else {
+                        ImageEnhancer.enhance(warped, page.filter, page.adjustments)
+                    }
+                    ImageIO.rotate(enhanced, page.rotation)
                 }
-                ImageIO.rotate(enhanced, page.rotation)
+                preview = bitmap.asImageBitmap()
+                previewKey = key
+                busy = false
+            } catch (e: CancellationException) {
+                // superseded by a newer render, which owns `busy` now
+                throw e
+            } catch (e: Throwable) {
+                // e.g. the session photo was purged from the cache: keep the screen usable
+                Log.e(TAG, "Preview failed", e)
+                busy = false
             }
-            preview = bitmap.asImageBitmap()
-            previewKey = key
-            busy = false
         }
     }
 
     fun renderThumbnails(page: DraftPage) {
         val key = "${page.id}|${page.corners}|${page.rotation}"
-        if (key == thumbnailsKey) return
         thumbsJob?.cancel()
+        if (key == thumbnailsKey) return
         thumbsJob = viewModelScope.launch {
-            val result = withContext(Dispatchers.Default) {
-                val small = ImageIO.scaleDown(warped(page, PREVIEW_SIZE).copy(Bitmap.Config.ARGB_8888, false), THUMB_SIZE)
-                val map = ScanFilter.entries.associateWith { f ->
-                    val out = if (f == ScanFilter.ORIGINAL) small.copy(Bitmap.Config.ARGB_8888, false)
-                    else ImageEnhancer.enhance(small, f)
-                    ImageIO.rotate(out, page.rotation).asImageBitmap()
+            val result = try {
+                withContext(Dispatchers.Default) {
+                    val small = ImageIO.scaleDown(warped(page, PREVIEW_SIZE).copy(Bitmap.Config.ARGB_8888, false), THUMB_SIZE)
+                    val map = ScanFilter.entries.associateWith { f ->
+                        val out = if (f == ScanFilter.ORIGINAL) small.copy(Bitmap.Config.ARGB_8888, false)
+                        else ImageEnhancer.enhance(small, f)
+                        ImageIO.rotate(out, page.rotation).asImageBitmap()
+                    }
+                    small.recycle()
+                    map
                 }
-                small.recycle()
-                map
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                Log.e(TAG, "Thumbnails failed", e)
+                return@launch
             }
             thumbnails = result
             thumbnailsKey = key
@@ -107,3 +130,5 @@ class FilterViewModel : ViewModel() {
         const val THUMB_SIZE = 220
     }
 }
+
+private const val TAG = "FilterViewModel"

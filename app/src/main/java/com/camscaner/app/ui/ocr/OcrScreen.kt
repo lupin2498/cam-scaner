@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -93,7 +95,8 @@ fun OcrScreen(onBack: () -> Unit) {
             TopAppBar(title = { Text(stringResource(R.string.ocr_title)) }, navigationIcon = { BackButton(onBack) })
         },
     ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding)) {
+        // edge-to-edge: the editable text and its buttons stay above the keyboard
+        Box(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
             when {
                 vm.running -> Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
                     CircularProgressIndicator()

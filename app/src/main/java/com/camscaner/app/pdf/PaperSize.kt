@@ -88,7 +88,7 @@ data class PdfOptions(
     val margin: PageMargin = PageMargin.NONE,
     val quality: PdfQuality = PdfQuality.HIGH,
     val ocrLayer: Boolean = false,
-    val mergeIdCards: Boolean = true,
+    val mergeIdCards: Boolean = false,
     val pageNumbers: Boolean = false,
     val password: String = "",
     val watermark: String = "",

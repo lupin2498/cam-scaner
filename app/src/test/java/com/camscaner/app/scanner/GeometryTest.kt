@@ -64,6 +64,32 @@ class GeometryTest {
     }
 
     @Test
+    fun aspectRatioStableForForwardTiltWithCornerNoise() {
+        // The most common handheld shot: tilted forward only, so the left and right sides
+        // converge and the top and bottom stay parallel; corners carry a few pixels of error.
+        val ratio = 1.0 / sqrt(2.0)
+        val w = 3000
+        val h = 4000
+        val random = java.util.Random(42)
+        var bad = 0
+        val runs = 300
+        repeat(runs) {
+            val tilt = Math.toRadians(5.0 + 20.0 * random.nextDouble()) * (if (random.nextBoolean()) 1 else -1)
+            val f = h * (0.75 + 0.2 * random.nextDouble())
+            val distance = f / h * 1.9
+            fun noise() = (random.nextDouble() * 12 - 6).toFloat()
+            val pts = listOf(-ratio / 2 to -0.5, ratio / 2 to -0.5, ratio / 2 to 0.5, -ratio / 2 to 0.5).map { (x, y) ->
+                val y1 = y * cos(tilt)
+                val z = y * sin(tilt) + distance
+                Pt((f * x / z + w / 2).toFloat() + noise(), (f * y1 / z + h / 2).toFloat() + noise())
+            }
+            val est = estimateAspectRatio(Corners(pts[0], pts[1], pts[2], pts[3]), w, h)
+            if (abs(est / ratio - 1) > 0.05) bad++
+        }
+        assertTrue("$bad of $runs estimates off by more than 5%", bad <= runs / 10)
+    }
+
+    @Test
     fun correctedSizeRespectsMaxDimension() {
         val c = Corners(Pt(0f, 0f), Pt(3000f, 0f), Pt(3000f, 4000f), Pt(0f, 4000f))
         val (w, h) = correctedSize(c, 0.75, 2000)

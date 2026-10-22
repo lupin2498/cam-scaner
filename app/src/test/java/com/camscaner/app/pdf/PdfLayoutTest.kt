@@ -48,6 +48,15 @@ class PdfLayoutTest {
     }
 
     @Test
+    fun autoA4PhotoWithMarginKeepsItsProportions() {
+        val s = plan(listOf(2480 to 3508), margin = PageMargin.MEDIUM).single()
+        assertEquals(595.28f, s.width, 0.01f)
+        val p = s.items.single()
+        assertEquals(2480f / 3508f, p.width / p.height, 0.002f)
+        assertTrue(p.x >= 35.9f && p.y >= 35.9f)
+    }
+
+    @Test
     fun autoLandscapePhotoGetsLandscapePage() {
         val s = plan(listOf(3508 to 2480)).single()
         assertTrue(s.width > s.height)

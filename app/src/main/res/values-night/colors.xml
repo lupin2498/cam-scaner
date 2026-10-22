@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- matches the dark Compose background, so cold starts in dark mode do not flash white -->
+    <color name="window_background">#FF101413</color>
+</resources>

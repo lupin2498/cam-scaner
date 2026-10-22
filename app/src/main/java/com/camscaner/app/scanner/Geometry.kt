@@ -125,30 +125,34 @@ fun estimateAspectRatio(c: Corners, imageWidth: Int, imageHeight: Int): Double {
     val n2 = DoubleArray(3) { k2 * m2[it] - m1[it] }
     val n3 = DoubleArray(3) { k3 * m3[it] - m1[it] }
 
-    var ratio = Double.NaN
+    // The focal length follows from the vanishing points, but becomes meaningless when a pair of
+    // sides is (nearly) parallel: with a few pixels of corner noise it comes out many times too
+    // large or negative. Then a typical phone focal length is used in the same formula, which
+    // stays valid in the parallel case.
+    val longSide = max(imageWidth, imageHeight).toDouble()
+    var f = Double.NaN
     if (abs(n2[2]) > 1e-6 && abs(n3[2]) > 1e-6) {
         val f2 = -((n2[0] * n3[0] - (n2[0] * n3[2] + n2[2] * n3[0]) * u0 + n2[2] * n3[2] * u0 * u0) +
             (n2[1] * n3[1] - (n2[1] * n3[2] + n2[2] * n3[1]) * v0 + n2[2] * n3[2] * v0 * v0)) / (n2[2] * n3[2])
-        if (f2 > 0) {
-            val f = sqrt(f2)
-            fun quad(n: DoubleArray): Double {
-                val x = (n[0] - u0 * n[2]) / f
-                val y = (n[1] - v0 * n[2]) / f
-                return x * x + y * y + n[2] * n[2]
-            }
-            val r2 = quad(n2) / quad(n3)
-            if (r2 > 0) ratio = sqrt(r2)
-        }
+        if (f2 > 0) f = sqrt(f2)
     }
-    if (ratio.isNaN()) {
-        // Opposite sides are (nearly) parallel: affine case.
-        val a = n2[0] * n2[0] + n2[1] * n2[1]
-        val b = n3[0] * n3[0] + n3[1] * n3[1]
-        if (b > 0) ratio = sqrt(a / b)
+    if (f.isNaN() || f < MIN_FOCAL * longSide || f > MAX_FOCAL * longSide) f = NOMINAL_FOCAL * longSide
+    fun quad(n: DoubleArray): Double {
+        val x = (n[0] - u0 * n[2]) / f
+        val y = (n[1] - v0 * n[2]) / f
+        return x * x + y * y + n[2] * n[2]
     }
+    val q3 = quad(n3)
+    val ratio = if (q3 > 0) sqrt(quad(n2) / q3) else Double.NaN
     if (ratio.isNaN() || ratio < 0.2 || ratio > 5.0 || abs(ratio / visible - 1) > 0.6) return visible
     return ratio
 }
+
+// Focal length range accepted from the estimate, and the fallback, relative to the image's long
+// side. Phone main cameras are around 0.7-1.0; a wider range lets corner noise through.
+private const val MIN_FOCAL = 0.55
+private const val MAX_FOCAL = 1.5
+private const val NOMINAL_FOCAL = 0.8
 
 /** Output size (width, height) in pixels for a perspective-corrected page with the given real ratio. */
 fun correctedSize(c: Corners, ratio: Double, maxDim: Int): Pair<Int, Int> {

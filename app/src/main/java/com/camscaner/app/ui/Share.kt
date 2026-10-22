@@ -9,6 +9,7 @@ import android.widget.Toast
 import androidx.core.content.FileProvider
 import com.camscaner.app.R
 import java.io.File
+import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -52,8 +53,16 @@ object Share {
         }
     }
 
+    /** Copies [file] over [target]; an existing, longer file there is truncated first. */
     fun copyToUri(context: Context, file: File, target: Uri) {
-        context.contentResolver.openOutputStream(target)?.use { out -> file.inputStream().use { it.copyTo(out) } }
+        val resolver = context.contentResolver
+        // plain "w" does not truncate on many providers since Android 10, leaving the old tail behind
+        val out = try {
+            resolver.openOutputStream(target, "wt")
+        } catch (e: Exception) {
+            resolver.openOutputStream(target, "w")
+        } ?: throw IOException("Cannot open $target")
+        out.use { o -> file.inputStream().use { it.copyTo(o) } }
     }
 
     /** "Scan 2026-10-21 17.45" style default name. */

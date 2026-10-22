@@ -1,7 +1,11 @@
 package com.camscaner.app.ui.camera
 
 import android.Manifest
+import android.app.Activity
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.provider.Settings
 import android.util.Log
 import android.util.Size
 import android.widget.Toast
@@ -15,6 +19,7 @@ import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.Preview
+import androidx.camera.core.TorchState
 import androidx.camera.core.resolutionselector.AspectRatioStrategy
 import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
@@ -63,6 +68,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.neverEqualPolicy
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -75,19 +81,27 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.Observer
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.lifecycle.withStarted
 import coil.compose.AsyncImage
 import com.camscaner.app.R
 import com.camscaner.app.scannerApp
 import com.camscaner.app.ui.ScanSessionViewModel
+import com.camscaner.app.ui.components.ConfirmDialog
+import com.camscaner.app.ui.components.LightSystemBarIcons
 import kotlinx.coroutines.launch
 import java.io.File
 import java.util.concurrent.Executors
@@ -96,18 +110,56 @@ import kotlin.math.min
 @Composable
 fun CameraScreen(session: ScanSessionViewModel, onClose: () -> Unit, onDone: () -> Unit) {
     val context = LocalContext.current
-    var hasPermission by remember {
-        mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
+    LightSystemBarIcons()
+    fun granted() = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+    var hasPermission by remember { mutableStateOf(granted()) }
+    var asked by remember { mutableStateOf(false) }
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+        hasPermission = it
+        asked = true
     }
-    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { hasPermission = it }
     LaunchedEffect(Unit) {
         if (!hasPermission) permissionLauncher.launch(Manifest.permission.CAMERA)
     }
-    BackHandler(onBack = onClose)
+    // the permission may have been granted in the system settings meanwhile
+    LifecycleResumeEffect(Unit) {
+        hasPermission = granted()
+        onPauseOrDispose { }
+    }
+    fun requestPermission() {
+        val activity = context as? Activity
+        val blocked = asked && activity != null &&
+            !ActivityCompat.shouldShowRequestPermissionRationale(activity, Manifest.permission.CAMERA)
+        if (blocked) {
+            // denied permanently: the system no longer shows the dialog
+            context.startActivity(
+                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null))
+            )
+        } else {
+            permissionLauncher.launch(Manifest.permission.CAMERA)
+        }
+    }
+
+    // pages taken in this session are deleted on close, so ask first
+    val unsaved = session.pages.count { it.existingPageId == null }
+    var confirmClose by remember { mutableStateOf(false) }
+    val close: () -> Unit = {
+        if (unsaved > 0) confirmClose = true else onClose()
+    }
+    BackHandler(onBack = close)
+    if (confirmClose) {
+        ConfirmDialog(
+            title = stringResource(R.string.camera_discard_title),
+            message = pluralStringResource(R.plurals.camera_discard_message, unsaved, unsaved),
+            confirmLabel = stringResource(R.string.camera_discard),
+            onConfirm = onClose,
+            onDismiss = { confirmClose = false },
+        )
+    }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         if (hasPermission) {
-            CameraContent(session, onClose, onDone)
+            CameraContent(session, close, onDone)
         } else {
             Column(
                 Modifier.align(Alignment.Center).padding(32.dp),
@@ -117,11 +169,11 @@ fun CameraScreen(session: ScanSessionViewModel, onClose: () -> Unit, onDone: () 
                 Spacer(Modifier.height(8.dp))
                 Text(stringResource(R.string.camera_permission_message), color = Color.White.copy(alpha = 0.8f))
                 Spacer(Modifier.height(24.dp))
-                Button(onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) }) {
+                Button(onClick = ::requestPermission) {
                     Text(stringResource(R.string.camera_permission_grant))
                 }
             }
-            IconButton(onClick = onClose, modifier = Modifier.statusBarsPadding().padding(8.dp)) {
+            IconButton(onClick = close, modifier = Modifier.statusBarsPadding().padding(8.dp)) {
                 Icon(Icons.Filled.Close, stringResource(R.string.close), tint = Color.White)
             }
         }
@@ -138,11 +190,14 @@ private fun CameraContent(session: ScanSessionViewModel, onClose: () -> Unit, on
     val scope = rememberCoroutineScope()
     val primary = MaterialTheme.colorScheme.primary
 
-    var detection by remember { mutableStateOf<FrameDetection?>(null) }
+    // every analysed frame must reach the tracker, also when it equals the previous one
+    var detection by remember { mutableStateOf<FrameDetection?>(null, neverEqualPolicy()) }
     var flash by remember { mutableStateOf(FlashState.OFF) }
     var capturing by remember { mutableStateOf(false) }
     var holdProgress by remember { mutableFloatStateOf(0f) }
     var cameraRef by remember { mutableStateOf<Camera?>(null) }
+    var cameraFailed by remember { mutableStateOf(false) }
+    var pickerOpen by remember { mutableStateOf(false) }
     val flashOverlay = remember { Animatable(0f) }
     val tracker = remember { StabilityTracker() }
 
@@ -170,7 +225,13 @@ private fun CameraContent(session: ScanSessionViewModel, onClose: () -> Unit, on
         val future = ProcessCameraProvider.getInstance(context)
         var provider: ProcessCameraProvider? = null
         future.addListener({
-            val p = future.get()
+            val p = try {
+                future.get()
+            } catch (e: Exception) {
+                Log.e(TAG, "Camera provider unavailable", e)
+                cameraFailed = true
+                return@addListener
+            }
             provider = p
             val ratio43 = ResolutionSelector.Builder()
                 .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
@@ -189,10 +250,14 @@ private fun CameraContent(session: ScanSessionViewModel, onClose: () -> Unit, on
             analysis.setAnalyzer(analyzerExecutor, DocumentAnalyzer { detection = it })
             try {
                 p.unbindAll()
-                cameraRef = p.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, preview, imageCapture, analysis)
+                // tablets and Chromebooks may only have a front camera
+                val selector = if (p.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA)) CameraSelector.DEFAULT_BACK_CAMERA
+                else CameraSelector.DEFAULT_FRONT_CAMERA
+                cameraRef = p.bindToLifecycle(lifecycleOwner, selector, preview, imageCapture, analysis)
                 Log.i(TAG, "Camera bound")
             } catch (e: Exception) {
                 Log.e(TAG, "Camera binding failed", e)
+                cameraFailed = true
             }
         }, ContextCompat.getMainExecutor(context))
         onDispose {
@@ -202,10 +267,22 @@ private fun CameraContent(session: ScanSessionViewModel, onClose: () -> Unit, on
     DisposableEffect(Unit) {
         onDispose { analyzerExecutor.shutdown() }
     }
+    // the torch goes off when the app is backgrounded; keep the flash icon in sync with it
+    DisposableEffect(cameraRef) {
+        val torch = cameraRef?.cameraInfo?.torchState
+        val observer = Observer<Int> { state ->
+            if (state == TorchState.OFF && flash == FlashState.TORCH) flash = FlashState.OFF
+        }
+        torch?.observe(lifecycleOwner, observer)
+        onDispose { torch?.removeObserver(observer) }
+    }
 
     fun capture() {
-        if (capturing) return
+        // takePicture fails with "Not bound to a valid Camera" until binding has finished
+        if (capturing || cameraRef == null) return
         capturing = true
+        // the next auto-capture needs a new page, whether this shot was manual or automatic
+        tracker.disarm()
         scope.launch {
             flashOverlay.snapTo(0.7f)
             flashOverlay.animateTo(0f, tween(300))
@@ -223,12 +300,11 @@ private fun CameraContent(session: ScanSessionViewModel, onClose: () -> Unit, on
             object : ImageCapture.OnImageSavedCallback {
                 override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
                     Log.i(TAG, "Photo saved (${file.length()} bytes)")
+                    // a single shot opens the crop screen through the navigation once processed
+                    val job = session.addCapture(file, single = !settings.batchMode)
                     scope.launch {
-                        val batch = settings.batchMode
-                        if (!batch) session.clear()
-                        session.addPhoto(file)
+                        job.join()
                         capturing = false
-                        if (!batch && session.pages.isNotEmpty()) lifecycleOwner.lifecycle.withStarted { onDone() }
                     }
                 }
 
@@ -244,23 +320,29 @@ private fun CameraContent(session: ScanSessionViewModel, onClose: () -> Unit, on
     LaunchedEffect(detection) {
         val progress = tracker.update(detection?.corners)
         holdProgress = progress
-        if (settings.autoCapture && progress >= 1f && !capturing) {
-            tracker.disarm()
+        // not behind the photo picker or while an import runs: the screen is not what the user sees
+        val visible = lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+        if (settings.autoCapture && progress >= 1f && !capturing && !pickerOpen && !session.importing && visible) {
             capture()
         }
     }
 
     val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(50)) { uris ->
-        if (uris.isNotEmpty()) {
-            scope.launch {
-                session.importUris(uris)
-                if (session.pages.isNotEmpty()) lifecycleOwner.lifecycle.withStarted { onDone() }
-            }
-        }
+        pickerOpen = false
+        // the navigation opens the crop screen once the import is done
+        if (uris.isNotEmpty()) session.import(uris)
     }
 
     Box(Modifier.fillMaxSize()) {
         AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
+        if (cameraFailed) {
+            Text(
+                stringResource(R.string.camera_unavailable),
+                color = Color.White,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.align(Alignment.Center).padding(32.dp),
+            )
+        }
 
         Canvas(Modifier.fillMaxSize()) {
             val d = detection
@@ -362,6 +444,7 @@ private fun CameraContent(session: ScanSessionViewModel, onClose: () -> Unit, on
             ) {
                 IconButton(
                     onClick = {
+                        pickerOpen = true
                         galleryLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                     },
                     modifier = Modifier.size(56.dp),
@@ -372,13 +455,14 @@ private fun CameraContent(session: ScanSessionViewModel, onClose: () -> Unit, on
                     label = stringResource(R.string.camera_capture),
                     progress = if (settings.autoCapture) holdProgress else 0f,
                     busy = capturing,
+                    enabled = cameraRef != null,
                 ) { capture() }
                 val last = session.pages.lastOrNull()
                 if (settings.batchMode && last != null) {
                     Box(
                         Modifier.size(56.dp).clip(RoundedCornerShape(8.dp))
                             .border(2.dp, Color.White, RoundedCornerShape(8.dp))
-                            .clickable { onDone() },
+                            .clickable(enabled = !capturing) { onDone() },
                     ) {
                         AsyncImage(model = last.originalFile, contentDescription = stringResource(R.string.done), contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
                         Box(
@@ -417,8 +501,15 @@ private fun ModeChip(label: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun ShutterButton(label: String, progress: Float, busy: Boolean, onClick: () -> Unit) {
-    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(84.dp).semantics { contentDescription = label }) {
+private fun ShutterButton(label: String, progress: Float, busy: Boolean, enabled: Boolean, onClick: () -> Unit) {
+    val active = enabled && !busy
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier.size(84.dp).semantics {
+            contentDescription = label
+            if (!active) disabled()
+        },
+    ) {
         if (progress > 0f) {
             CircularProgressIndicator(
                 progress = { progress },
@@ -429,8 +520,8 @@ private fun ShutterButton(label: String, progress: Float, busy: Boolean, onClick
         }
         Box(
             Modifier.size(72.dp).clip(CircleShape).border(4.dp, Color.White, CircleShape).padding(6.dp)
-                .clip(CircleShape).background(if (busy) Color.Gray else Color.White)
-                .clickable(enabled = !busy, onClick = onClick),
+                .clip(CircleShape).background(if (active) Color.White else Color.Gray)
+                .clickable(enabled = active, onClick = onClick),
             contentAlignment = Alignment.Center,
         ) {
             if (busy) CircularProgressIndicator(Modifier.size(28.dp), color = Color.White, strokeWidth = 3.dp)

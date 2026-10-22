@@ -79,10 +79,11 @@ object PdfLayout {
         val boxW = pageW - 2 * m
         val boxH = pageH - 2 * m
         val boxRatio = boxW / boxH
-        // When the photo is recognised as the same standard sheet, fill the page exactly
-        // (the difference is below the snap tolerance) so the PDF looks like a flatbed scan.
-        val fill = exactFit && orientation == PageOrientation.AUTO &&
-            kotlin.math.abs(ratio / boxRatio - 1f) < PaperSize.SNAP_TOLERANCE * 2
+        // When the photo is recognised as the same standard sheet and there is no margin, fill the
+        // page exactly (the difference is below the snap tolerance) so the PDF looks like a flatbed
+        // scan. With margins the box no longer has the sheet's ratio, so the image keeps its own.
+        val fill = exactFit && m == 0f && orientation == PageOrientation.AUTO &&
+            kotlin.math.abs(ratio / boxRatio - 1f) < PaperSize.SNAP_TOLERANCE
         val (iw, ih) = when {
             fill -> boxW to boxH
             ratio > boxRatio -> boxW to boxW / ratio
