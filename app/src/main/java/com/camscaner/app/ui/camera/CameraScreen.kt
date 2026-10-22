@@ -330,7 +330,7 @@ private fun CameraContent(session: ScanSessionViewModel, onClose: () -> Unit, on
     val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(50)) { uris ->
         pickerOpen = false
         // the navigation opens the crop screen once the import is done
-        if (uris.isNotEmpty()) session.import(uris)
+        if (uris.isNotEmpty()) session.importImages(uris)
     }
 
     Box(Modifier.fillMaxSize()) {

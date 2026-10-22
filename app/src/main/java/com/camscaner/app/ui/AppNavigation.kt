@@ -52,7 +52,7 @@ fun AppNavigation(sharedUris: List<Uri>, onSharedConsumed: () -> Unit) {
 
     fun importAndCrop(docId: String?, returnRoute: String?, uris: List<Uri>) {
         session.start(docId, returnRoute)
-        session.import(uris)
+        session.importImages(uris)
     }
 
     LaunchedEffect(session.cropReady) {

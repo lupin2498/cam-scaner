@@ -121,7 +121,7 @@ class ScanSessionViewModel(app: Application, private val state: SavedStateHandle
      * Imports [uris] independently of the calling screen, so a configuration change cannot cut it
      * short; [cropReady] tells the navigation to open the crop screen.
      */
-    fun import(uris: List<Uri>) {
+    fun importImages(uris: List<Uri>) {
         viewModelScope.launch {
             val imported = importUris(uris)
             if (imported < uris.size) {
