@@ -5,6 +5,7 @@ import org.opencv.android.Utils
 import org.opencv.core.Core
 import org.opencv.core.Mat
 import org.opencv.core.Point
+import org.opencv.core.Scalar
 import org.opencv.core.Size
 import org.opencv.imgproc.Imgproc
 import kotlin.math.abs
@@ -61,7 +62,8 @@ object PageAligner {
 
     /**
      * Rotates [page] clockwise by [degrees] around its centre, keeping its size so the sheet keeps
-     * its paper proportions; the uncovered corners repeat the page border. Returns [page] itself
+     * its paper proportions; the uncovered corners are filled with the paper colour (repeating the
+     * border would smear any sliver of background along the edge into them). Returns [page] itself
      * when there is nothing to do.
      */
     fun rotate(page: Bitmap, degrees: Float): Bitmap {
@@ -74,11 +76,40 @@ object PageAligner {
             // OpenCV angles are counter-clockwise
             val m: Mat = Imgproc.getRotationMatrix2D(Point(w / 2.0, h / 2.0), -degrees.toDouble(), 1.0).track()
             val dst = mat()
-            Imgproc.warpAffine(src, dst, m, Size(w.toDouble(), h.toDouble()), Imgproc.INTER_LINEAR, Core.BORDER_REPLICATE)
+            Imgproc.warpAffine(
+                src, dst, m, Size(w.toDouble(), h.toDouble()),
+                Imgproc.INTER_LINEAR, Core.BORDER_CONSTANT, paperColor(src),
+            )
             val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
             Utils.matToBitmap(dst, out)
             out
         }
+    }
+
+    /** Typical colour of the page margins: the per-channel median of a band just inside the edges. */
+    private fun MatScope.paperColor(rgba: Mat): Scalar {
+        val scale = 128.0 / max(rgba.cols(), rgba.rows())
+        val small = mat()
+        Imgproc.resize(rgba, small, Size(), scale, scale, Imgproc.INTER_AREA)
+        val w = small.cols()
+        val h = small.rows()
+        val px = ByteArray(w * h * 4)
+        small.get(0, 0, px)
+        // skip the outermost pixels, which may still show the table the sheet lay on
+        val outer = max(1, (minOf(w, h) * 0.03).toInt())
+        val inner = max(outer + 1, (minOf(w, h) * 0.10).toInt())
+        val channels = Array(3) { ArrayList<Int>() }
+        for (y in outer until h - outer) {
+            for (x in outer until w - outer) {
+                val inBand = x < inner || y < inner || x >= w - inner || y >= h - inner
+                if (!inBand) continue
+                val i = (y * w + x) * 4
+                for (c in 0..2) channels[c] += px[i + c].toInt() and 0xFF
+            }
+        }
+        if (channels[0].isEmpty()) return Scalar(255.0, 255.0, 255.0, 255.0)
+        val median = channels.map { it.sorted()[it.size / 2].toDouble() }
+        return Scalar(median[0], median[1], median[2], 255.0)
     }
 
     /**
