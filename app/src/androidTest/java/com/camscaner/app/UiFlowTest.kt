@@ -155,8 +155,9 @@ class UiFlowTest {
         Thread.sleep(1500)
         shot("17_straighten")
         compose.onAllNodesWithText(str(R.string.filter_auto_align)).onFirst().performClick()
-        compose.waitText(str(R.string.filter_aligned), 30_000)
-        assertEquals(180, firstDraft()?.rotation)
+        // the confirmation snackbar is too short-lived to poll for; the page itself must be upright
+        compose.waitUntil(60_000) { firstDraft()?.rotation == 180 }
+        compose.waitUntil(10_000) { compose.onAllNodesWithText(str(R.string.filter_aligning)).fetchSemanticsNodes().isEmpty() }
 
         // a manual angle replaces the automatic one
         compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.SetProgress)).performSemanticsAction(SemanticsActions.SetProgress) { it(3f) }
