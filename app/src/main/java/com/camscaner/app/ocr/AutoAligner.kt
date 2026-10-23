@@ -56,13 +56,9 @@ object AutoAligner {
 
     /** Aligns a perspective-corrected page; [page] is recycled. */
     suspend fun analyze(page: Bitmap): Alignment {
+        // sparse or faint text may have no clear line profile; it can still be read
         val estimate = runCatching { PageAligner.measure(page) }.getOrNull()
-        if (estimate == null) {
-            // no lines of text or rules: nothing to read the orientation from
-            page.recycle()
-            return Alignment(null, 0f)
-        }
-        val skew = estimate.correction.takeIf { abs(it) >= PageAligner.MIN_CORRECTION } ?: 0f
+        val skew = estimate?.correction?.takeIf { abs(it) >= PageAligner.MIN_CORRECTION } ?: 0f
         val straight = PageAligner.rotate(page, skew)
         if (straight !== page) page.recycle()
         // ML Kit keeps reading the bitmap after a cancelled await; finish before recycling it
