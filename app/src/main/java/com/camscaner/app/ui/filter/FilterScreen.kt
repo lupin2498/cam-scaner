@@ -111,7 +111,7 @@ fun FilterScreen(session: ScanSessionViewModel, onBack: () -> Unit, onSaved: (do
         ).show()
     }
     // always intercept Back: while saving it must not pop the screen under the progress overlay
-    BackHandler { if (!session.saving) onBack() }
+    BackHandler { if (!session.saving && !aligning) onBack() }
 
     if (pages.isEmpty()) {
         // pages are cleared right after saving, while navigation to the document happens
@@ -176,7 +176,7 @@ fun FilterScreen(session: ScanSessionViewModel, onBack: () -> Unit, onSaved: (do
                 if (bmp != null) {
                     Image(bmp, contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
                 }
-                if (vm.busy || bmp == null || aligning) CircularProgressIndicator()
+                if (vm.busy || bmp == null) CircularProgressIndicator()
                 if (pages.size > 1) {
                     IconButton(
                         onClick = { session.currentIndex = (index - 1).coerceAtLeast(0) },
@@ -296,6 +296,9 @@ fun FilterScreen(session: ScanSessionViewModel, onBack: () -> Unit, onSaved: (do
             }
         }
     }
+
+    // the page must not change under a running alignment, and saving waits for it
+    if (aligning) ProgressDialog(message = stringResource(R.string.filter_aligning))
 
     session.saveProgress?.let { (done, total) ->
         ProgressDialog(

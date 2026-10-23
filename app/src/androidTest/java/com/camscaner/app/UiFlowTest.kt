@@ -141,7 +141,8 @@ class UiFlowTest {
         scenario = ActivityScenario.launch(intent)
 
         compose.waitText(str(R.string.crop_auto), 30_000)
-        assertEquals(180, firstDraft()?.rotation)
+        // the orientation is found in the background
+        compose.waitUntil(60_000) { firstDraft()?.rotation == 180 }
         assertEquals(null, firstDraft()?.skew)
         compose.onAllNodesWithText(str(R.string.next)).onFirst().performClick()
         compose.waitText(str(R.string.filter_original))

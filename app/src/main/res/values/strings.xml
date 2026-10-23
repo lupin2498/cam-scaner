@@ -82,6 +82,7 @@
     <string name="filter_straighten_angle">Góc nghiêng: %1$s°</string>
     <string name="filter_auto_align">Tự căn chỉnh</string>
     <string name="filter_aligned">Đã căn chỉnh trang</string>
+    <string name="filter_aligning">Đang căn chỉnh trang…</string>
     <string name="filter_align_no_text">Không nhận ra hướng chữ, đã làm thẳng trang</string>
     <string name="filter_reset">Đặt lại</string>
     <string name="filter_saving">Đang lưu trang…</string>

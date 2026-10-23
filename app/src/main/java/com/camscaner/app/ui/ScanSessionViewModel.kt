@@ -2,6 +2,8 @@ package com.camscaner.app.ui
 
 import android.app.Application
 import android.net.Uri
+import android.os.SystemClock
+import android.util.Log
 import android.widget.Toast
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -22,7 +24,10 @@ import com.camscaner.app.scanner.ImageIO
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -119,10 +124,6 @@ class ScanSessionViewModel(app: Application, private val state: SavedStateHandle
             return@withContext null
         }
         val detected = if (settings.autoCrop) detect(out) else null
-        // which way up the page is, judged by its text; a failure just leaves it as photographed
-        val rotation = if (settings.autoAlign) {
-            runCatching { AutoAligner.analyze(out, detected).rotation }.getOrNull() ?: 0
-        } else 0
         val draft = DraftPage(
             id = DocumentRepository.newId(),
             originalFile = out,
@@ -130,7 +131,6 @@ class ScanSessionViewModel(app: Application, private val state: SavedStateHandle
             height = size.second,
             detected = detected,
             corners = detected,
-            rotation = rotation,
             filter = settings.defaultFilter,
             skew = if (settings.autoStraighten) null else 0f,
         )
@@ -138,6 +138,7 @@ class ScanSessionViewModel(app: Application, private val state: SavedStateHandle
             if (gen != generation) return@withContext false
             pages += draft
             currentIndex = pages.lastIndex
+            alignLater(draft, gen)
             true
         }
         if (!added) {
@@ -231,6 +232,35 @@ class ScanSessionViewModel(app: Application, private val state: SavedStateHandle
         currentIndex = currentIndex.coerceAtMost(pages.lastIndex).coerceAtLeast(0)
     }
 
+    /** Background alignment of new pages, one at a time (OCR is heavy), by page id. */
+    private val alignJobs = HashMap<String, Job>()
+    private val alignMutex = Mutex()
+
+    /**
+     * Finds which way up a new page is from its text, in the background so the crop screen opens
+     * at once; the result is applied unless the user has turned the page meanwhile.
+     */
+    private fun alignLater(draft: DraftPage, gen: Int) {
+        if (!settings.autoAlign) return
+        alignJobs[draft.id] = viewModelScope.launch {
+            try {
+                val rotation = alignMutex.withLock {
+                    if (gen != generation || pages.none { it.id == draft.id }) return@withLock null
+                    val started = SystemClock.elapsedRealtime()
+                    withContext(Dispatchers.Default) {
+                        runCatching { AutoAligner.analyze(draft.originalFile, draft.corners).rotation }.getOrNull()
+                    }.also { Log.d(TAG, "aligned ${draft.id} -> $it in ${SystemClock.elapsedRealtime() - started} ms") }
+                } ?: return@launch
+                val i = pages.indexOfFirst { it.id == draft.id }
+                if (gen == generation && i >= 0 && pages[i].rotation == draft.rotation) {
+                    update(i) { it.copy(rotation = rotation) }
+                }
+            } finally {
+                alignJobs.remove(draft.id)
+            }
+        }
+    }
+
     /**
      * Turns the page upright by its text and switches it to automatic straightening. Returns
      * false when no text orientation could be found (the page is still straightened).
@@ -240,9 +270,11 @@ class ScanSessionViewModel(app: Application, private val state: SavedStateHandle
         val alignment = withContext(Dispatchers.Default) {
             runCatching { AutoAligner.analyze(page.originalFile, page.corners) }.getOrNull()
         }
-        // pages may have been removed or reordered meanwhile
+        // pages may have been removed, reordered or edited meanwhile; edits win
         val now = pages.indexOfFirst { it.id == page.id }
-        update(now) { it.copy(rotation = alignment?.rotation ?: it.rotation, skew = null) }
+        if (now >= 0 && pages[now].rotation == page.rotation && pages[now].skew == page.skew) {
+            update(now) { it.copy(rotation = alignment?.rotation ?: it.rotation, skew = null) }
+        }
         return alignment?.rotation != null
     }
 
@@ -265,9 +297,11 @@ class ScanSessionViewModel(app: Application, private val state: SavedStateHandle
         saving = true
         saveError = null
         saveProgress = 0 to pages.size
-        val drafts = pages.toList()
         viewModelScope.launch {
             try {
+                // pages still being aligned are saved the right way up
+                alignJobs.values.toList().joinAll()
+                val drafts = pages.toList()
                 val id = repository.saveDrafts(targetDocId, newName, drafts) { done, total ->
                     saveProgress = done to total
                 }
@@ -311,3 +345,5 @@ class ScanSessionViewModel(app: Application, private val state: SavedStateHandle
         const val KEY_RETURN = "return_route"
     }
 }
+
+private const val TAG = "ScanSession"

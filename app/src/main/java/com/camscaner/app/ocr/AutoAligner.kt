@@ -1,6 +1,8 @@
 package com.camscaner.app.ocr
 
 import android.graphics.Bitmap
+import android.os.SystemClock
+import android.util.Log
 import com.camscaner.app.scanner.Corners
 import com.camscaner.app.scanner.ImageIO
 import com.camscaner.app.scanner.PageAligner
@@ -52,13 +54,18 @@ object AutoAligner {
     /** Aligns a perspective-corrected page; [page] is recycled. */
     suspend fun analyze(page: Bitmap): Alignment {
         val estimate = runCatching { PageAligner.measure(page) }.getOrNull()
-        val skew = estimate?.correction?.takeIf { abs(it) >= PageAligner.MIN_CORRECTION } ?: 0f
+        if (estimate == null) {
+            // no lines of text or rules: nothing to read the orientation from
+            page.recycle()
+            return Alignment(null, 0f)
+        }
+        val skew = estimate.correction.takeIf { abs(it) >= PageAligner.MIN_CORRECTION } ?: 0f
         val straight = PageAligner.rotate(page, skew)
         if (straight !== page) page.recycle()
         // ML Kit keeps reading the bitmap after a cancelled await; finish before recycling it
         return withContext(NonCancellable) {
             try {
-                Alignment(orientation(straight, estimate?.sideways), skew)
+                Alignment(orientation(straight, estimate.sideways), skew)
             } finally {
                 straight.recycle()
             }
@@ -80,8 +87,9 @@ object AutoAligner {
         val (best, bestScore) = scores[0]
         val runnerUp = scores[1].second
         // no text to judge by, or no clear winner: leave the orientation to the user
-        if (bestScore < MIN_SCORE || bestScore < runnerUp * MARGIN) return null
-        return best
+        val result = if (bestScore < MIN_SCORE || bestScore < runnerUp * MARGIN) null else best
+        Log.d(TAG, "orientation ${page.width}x${page.height} sideways=$sideways scores=$scores -> $result")
+        return result
     }
 
     /**
@@ -89,17 +97,33 @@ object AutoAligner {
      * clockwise by [rotation]. Text read upside down or sideways comes out garbled, short or tilted.
      */
     private suspend fun score(page: Bitmap, rotation: Int): Float {
+        val started = SystemClock.elapsedRealtime()
         val text = recognizer.process(InputImage.fromBitmap(page, rotation)).await()
         var score = 0f
+        var lines = 0
+        val samples = StringBuilder()
         for (block in text.textBlocks) {
             for (line in block.lines) {
+                lines++
+                if (samples.length < 300) {
+                    samples.append(" [").append(line.text.take(24)).append(" a=").append("%.0f".format(line.angle))
+                        .append(" c=").append("%.2f".format(line.confidence)).append(']')
+                }
                 if (abs(line.angle) > LEVEL_TOLERANCE) continue
-                val chars = line.text.count { it.isLetterOrDigit() }
-                score += chars * line.confidence
+                val letters = line.text.count { it.isLetterOrDigit() }
+                val visible = line.text.count { !it.isWhitespace() }
+                if (visible == 0) continue
+                // garbled readings are heavy in punctuation and stray marks
+                val clean = letters.toFloat() / visible
+                // some models report no confidence; then every line counts fully
+                val confidence = if (line.confidence > 0f) line.confidence else 1f
+                score += letters * confidence * clean * clean
             }
         }
+        Log.d(TAG, "rotation $rotation: $lines lines, score ${"%.1f".format(score)}, ${SystemClock.elapsedRealtime() - started} ms;$samples")
         return score
     }
 
     private const val LEVEL_TOLERANCE = 30f
+    private const val TAG = "AutoAligner"
 }
