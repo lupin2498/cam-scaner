@@ -14,6 +14,8 @@ import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
@@ -114,6 +116,12 @@ class UiFlowTest {
         return filter
     }
 
+    /** Waits until no busy indicator (indeterminate progress) is shown, e.g. a preview being rendered. */
+    private fun waitUntilIdleProgress(timeout: Long = 30_000) {
+        val busy = SemanticsMatcher.expectValue(SemanticsProperties.ProgressBarRangeInfo, ProgressBarRangeInfo.Indeterminate)
+        compose.waitUntil(timeout) { compose.onAllNodes(busy).fetchSemanticsNodes().isEmpty() }
+    }
+
     /** First page of the activity's scan session. */
     private fun firstDraft(): com.camscaner.app.data.DraftPage? {
         var page: com.camscaner.app.data.DraftPage? = null
@@ -152,7 +160,7 @@ class UiFlowTest {
         compose.waitUntil(5_000) { firstDraft()?.rotation == 270 }
         compose.onNodeWithText(str(R.string.filter_straighten)).performClick()
         compose.waitText(str(R.string.filter_straighten_auto))
-        Thread.sleep(1500)
+        waitUntilIdleProgress()
         shot("17_straighten")
         compose.onAllNodesWithText(str(R.string.filter_auto_align)).onFirst().performClick()
         // the confirmation snackbar is too short-lived to poll for; the page itself must be upright
@@ -162,13 +170,19 @@ class UiFlowTest {
         // a manual angle replaces the automatic one
         compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.SetProgress)).performSemanticsAction(SemanticsActions.SetProgress) { it(3f) }
         compose.waitUntil(5_000) { firstDraft()?.skew == 3f }
-        Thread.sleep(1500)
+        Thread.sleep(500)
+        waitUntilIdleProgress()
         shot("18_straighten_manual")
         compose.onNodeWithContentDescription(str(R.string.save)).performClick()
         compose.waitText(str(R.string.doc_export_pdf), 60_000)
-        val page = app.documents.documents.value.single().pages.single()
+        val doc = app.documents.documents.value.single()
+        val page = doc.pages.single()
         assertEquals(180, page.rotation)
         assertEquals(3f, page.skew)
+        // the saved image is turned clockwise by the manual 3°, so levelling it takes -3°
+        val saved = android.graphics.BitmapFactory.decodeFile(app.documents.pageFile(doc.id, page.id).absolutePath)
+        val tilt = com.camscaner.app.scanner.PageAligner.measure(saved)
+        assertTrue("measured $tilt", tilt != null && kotlin.math.abs(tilt.correction + 3f) < 0.6f)
     }
 
     @Test
