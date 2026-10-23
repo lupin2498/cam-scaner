@@ -15,7 +15,6 @@ import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.performSemanticsAction
-import androidx.compose.ui.test.hasSetProgressAction
 import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -159,7 +158,7 @@ class UiFlowTest {
         assertEquals(180, firstDraft()?.rotation)
 
         // a manual angle replaces the automatic one
-        compose.onNode(hasSetProgressAction()).performSemanticsAction(SemanticsActions.SetProgress) { it(3f) }
+        compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.SetProgress)).performSemanticsAction(SemanticsActions.SetProgress) { it(3f) }
         compose.waitUntil(5_000) { firstDraft()?.skew == 3f }
         Thread.sleep(1500)
         shot("18_straighten_manual")
