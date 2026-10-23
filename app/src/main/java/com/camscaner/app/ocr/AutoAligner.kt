@@ -15,6 +15,7 @@ import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import java.io.File
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 /** Result of aligning a page automatically. */
 data class Alignment(
@@ -26,7 +27,9 @@ data class Alignment(
 
 /**
  * Automatic page alignment: levels the text lines (straighten) and finds which way up the page is
- * by reading it in each candidate orientation and keeping the one that yields confident text.
+ * from the direction ML Kit reads its lines in. The recognizer reads text in any orientation and
+ * reports each line's angle, so one pass tells upright (0°), upside-down (180°) and sideways pages
+ * apart.
  */
 object AutoAligner {
 
@@ -35,8 +38,8 @@ object AutoAligner {
     /** Fewer readable characters than this: no text to judge by (photo, drawing, other script). */
     private const val MIN_SCORE = 12f
 
-    /** The winning orientation must read clearly better than the runner-up. */
-    private const val MARGIN = 1.4f
+    /** The winning direction must hold clearly more text than the runner-up. */
+    private const val MARGIN = 1.5f
 
     private val recognizer by lazy { TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) }
 
@@ -65,7 +68,7 @@ object AutoAligner {
         // ML Kit keeps reading the bitmap after a cancelled await; finish before recycling it
         return withContext(NonCancellable) {
             try {
-                Alignment(orientation(straight, estimate.sideways), skew)
+                Alignment(orientation(straight), skew)
             } finally {
                 straight.recycle()
             }
@@ -73,57 +76,39 @@ object AutoAligner {
     }
 
     /**
-     * Clockwise rotation that makes [page] upright, judged by text recognition, or null when the
-     * page has no readable text or the result is ambiguous. [sideways] narrows the candidates
-     * when the direction of the lines is already known.
+     * Clockwise rotation that makes [page] upright, or null when the page has no readable text or
+     * its lines do not agree on a direction.
      */
-    suspend fun orientation(page: Bitmap, sideways: Boolean?): Int? {
-        val candidates = when (sideways) {
-            false -> listOf(0, 180)
-            true -> listOf(90, 270)
-            null -> listOf(0, 90, 180, 270)
-        }
-        val scores = candidates.map { it to score(page, it) }.sortedByDescending { it.second }
-        val (best, bestScore) = scores[0]
-        val runnerUp = scores[1].second
-        // no text to judge by, or no clear winner: leave the orientation to the user
-        val result = if (bestScore < MIN_SCORE || bestScore < runnerUp * MARGIN) null else best
-        Log.d(TAG, "orientation ${page.width}x${page.height} sideways=$sideways scores=$scores -> $result")
-        return result
-    }
-
-    /**
-     * Confidence-weighted count of characters read on level lines when the page is turned
-     * clockwise by [rotation]. Text read upside down or sideways comes out garbled, short or tilted.
-     */
-    private suspend fun score(page: Bitmap, rotation: Int): Float {
+    suspend fun orientation(page: Bitmap): Int? {
         val started = SystemClock.elapsedRealtime()
-        val text = recognizer.process(InputImage.fromBitmap(page, rotation)).await()
-        var score = 0f
-        var lines = 0
-        val samples = StringBuilder()
+        val text = recognizer.process(InputImage.fromBitmap(page, 0)).await()
+        // text weighted by how readable it is, per reading direction: 0°, 90°, 180° and 270°
+        val votes = FloatArray(4)
         for (block in text.textBlocks) {
             for (line in block.lines) {
-                lines++
-                if (samples.length < 300) {
-                    samples.append(" [").append(line.text.take(24)).append(" a=").append("%.0f".format(line.angle))
-                        .append(" c=").append("%.2f".format(line.confidence)).append(']')
-                }
-                if (abs(line.angle) > LEVEL_TOLERANCE) continue
                 val letters = line.text.count { it.isLetterOrDigit() }
                 val visible = line.text.count { !it.isWhitespace() }
-                if (visible == 0) continue
+                if (letters < 2 || visible == 0) continue
                 // garbled readings are heavy in punctuation and stray marks
                 val clean = letters.toFloat() / visible
                 // some models report no confidence; then every line counts fully
                 val confidence = if (line.confidence > 0f) line.confidence else 1f
-                score += letters * confidence * clean * clean
+                val quarter = Math.floorMod((line.angle / 90f).roundToInt(), 4)
+                votes[quarter] += letters * confidence * clean * clean
             }
         }
-        Log.d(TAG, "rotation $rotation: $lines lines, score ${"%.1f".format(score)}, ${SystemClock.elapsedRealtime() - started} ms;$samples")
-        return score
+        val ranked = votes.indices.sortedByDescending { votes[it] }
+        val best = ranked[0]
+        val runnerUp = votes[ranked[1]]
+        // text running at best·90° clockwise is set upright by turning the page back by as much
+        val result = if (votes[best] < MIN_SCORE || votes[best] < runnerUp * MARGIN) null else (360 - best * 90) % 360
+        Log.d(
+            TAG,
+            "orientation ${page.width}x${page.height}: votes ${votes.joinToString { "%.0f".format(it) }} " +
+                "-> $result in ${SystemClock.elapsedRealtime() - started} ms",
+        )
+        return result
     }
 
-    private const val LEVEL_TOLERANCE = 30f
     private const val TAG = "AutoAligner"
 }
