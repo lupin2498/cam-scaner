@@ -15,6 +15,7 @@ import com.camscaner.app.R
 import com.camscaner.app.ScannerApp
 import com.camscaner.app.data.DocumentRepository
 import com.camscaner.app.data.DraftPage
+import com.camscaner.app.ocr.AutoAligner
 import com.camscaner.app.scanner.Corners
 import com.camscaner.app.scanner.DocumentDetector
 import com.camscaner.app.scanner.ImageIO
@@ -118,6 +119,10 @@ class ScanSessionViewModel(app: Application, private val state: SavedStateHandle
             return@withContext null
         }
         val detected = if (settings.autoCrop) detect(out) else null
+        // which way up the page is, judged by its text; a failure just leaves it as photographed
+        val rotation = if (settings.autoAlign) {
+            runCatching { AutoAligner.analyze(out, detected).rotation }.getOrNull() ?: 0
+        } else 0
         val draft = DraftPage(
             id = DocumentRepository.newId(),
             originalFile = out,
@@ -125,7 +130,9 @@ class ScanSessionViewModel(app: Application, private val state: SavedStateHandle
             height = size.second,
             detected = detected,
             corners = detected,
+            rotation = rotation,
             filter = settings.defaultFilter,
+            skew = if (settings.autoStraighten) null else 0f,
         )
         val added = withContext(Dispatchers.Main) {
             if (gen != generation) return@withContext false
@@ -208,6 +215,7 @@ class ScanSessionViewModel(app: Application, private val state: SavedStateHandle
             rotation = page.rotation,
             filter = page.filter,
             adjustments = page.adjustments,
+            skew = page.skew,
             existingPageId = pageId,
         )
     }
@@ -221,6 +229,21 @@ class ScanSessionViewModel(app: Application, private val state: SavedStateHandle
         val removed = pages.removeAt(index)
         if (removed.existingPageId == null) removed.originalFile.delete()
         currentIndex = currentIndex.coerceAtMost(pages.lastIndex).coerceAtLeast(0)
+    }
+
+    /**
+     * Turns the page upright by its text and switches it to automatic straightening. Returns
+     * false when no text orientation could be found (the page is still straightened).
+     */
+    suspend fun autoAlign(index: Int): Boolean {
+        val page = pages.getOrNull(index) ?: return false
+        val alignment = withContext(Dispatchers.Default) {
+            runCatching { AutoAligner.analyze(page.originalFile, page.corners) }.getOrNull()
+        }
+        // pages may have been removed or reordered meanwhile
+        val now = pages.indexOfFirst { it.id == page.id }
+        update(now) { it.copy(rotation = alignment?.rotation ?: it.rotation, skew = null) }
+        return alignment?.rotation != null
     }
 
     /** Runs the detector on demand (e.g. "auto" pressed on a page that had none). */

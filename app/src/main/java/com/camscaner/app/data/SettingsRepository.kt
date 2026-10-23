@@ -57,6 +57,24 @@ class SettingsRepository(context: Context) {
             prefs.edit { putBoolean(KEY_BATCH, value) }
         }
 
+    private var _autoAlign by mutableStateOf(prefs.getBoolean(KEY_AUTO_ALIGN, true))
+    /** Turn new pages upright automatically, judged by their text. */
+    var autoAlign: Boolean
+        get() = _autoAlign
+        set(value) {
+            _autoAlign = value
+            prefs.edit { putBoolean(KEY_AUTO_ALIGN, value) }
+        }
+
+    private var _autoStraighten by mutableStateOf(prefs.getBoolean(KEY_AUTO_STRAIGHTEN, true))
+    /** Level the text lines of new pages automatically. */
+    var autoStraighten: Boolean
+        get() = _autoStraighten
+        set(value) {
+            _autoStraighten = value
+            prefs.edit { putBoolean(KEY_AUTO_STRAIGHTEN, value) }
+        }
+
     /** Last used PDF options (the password is never stored). */
     fun pdfOptions(fileName: String): PdfOptions = PdfOptions(
         fileName = fileName,
@@ -96,6 +114,8 @@ class SettingsRepository(context: Context) {
         const val KEY_PDF_QUALITY = "pdf_quality"
         const val KEY_PDF_OCR = "pdf_ocr"
         const val KEY_PDF_ID = "pdf_id_cards"
+        const val KEY_AUTO_ALIGN = "auto_align"
+        const val KEY_AUTO_STRAIGHTEN = "auto_straighten"
         const val KEY_PDF_NUMBERS = "pdf_page_numbers"
         const val KEY_PDF_WATERMARK = "pdf_watermark"
     }

@@ -71,12 +71,18 @@
     <string name="filter_gray">Thang xám</string>
     <string name="filter_bw">Đen trắng</string>
     <string name="filter_bw_soft">Bản sao</string>
-    <string name="filter_apply_all">Áp dụng cho tất cả trang</string>
+    <string name="filter_apply_all">Cho mọi trang</string>
     <string name="filter_applied_all">Đã áp dụng cho tất cả trang</string>
     <string name="filter_adjust">Điều chỉnh</string>
     <string name="filter_brightness">Độ sáng</string>
     <string name="filter_contrast">Tương phản</string>
     <string name="filter_sharpness">Độ nét</string>
+    <string name="filter_straighten">Làm thẳng</string>
+    <string name="filter_straighten_auto">Tự động làm thẳng</string>
+    <string name="filter_straighten_angle">Góc nghiêng: %1$s°</string>
+    <string name="filter_auto_align">Tự căn chỉnh</string>
+    <string name="filter_aligned">Đã căn chỉnh trang</string>
+    <string name="filter_align_no_text">Không nhận ra hướng chữ, đã làm thẳng trang</string>
     <string name="filter_reset">Đặt lại</string>
     <string name="filter_saving">Đang lưu trang…</string>
 
@@ -155,6 +161,10 @@
     <!-- Cài đặt -->
     <string name="settings_title">Cài đặt</string>
     <string name="settings_default_filter">Bộ lọc mặc định cho ảnh quét</string>
+    <string name="settings_auto_align">Tự căn chỉnh trang</string>
+    <string name="settings_auto_align_desc">Tự xoay trang đúng chiều theo hướng chữ</string>
+    <string name="settings_auto_straighten">Tự làm thẳng trang</string>
+    <string name="settings_auto_straighten_desc">Tự sửa trang/chữ bị nghiêng</string>
     <string name="settings_auto_capture">Tự động chụp khi nhận diện được tài liệu</string>
     <string name="settings_grid">Hiện lưới khi chụp</string>
     <string name="settings_auto_crop">Tự động cắt mép giấy</string>

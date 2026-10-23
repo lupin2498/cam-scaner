@@ -27,8 +27,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Straighten
+import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.DoneAll
-import androidx.compose.material.icons.filled.Rotate90DegreesCcw
 import androidx.compose.material.icons.filled.Rotate90DegreesCw
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.CircularProgressIndicator
@@ -38,6 +39,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -72,6 +74,8 @@ import com.camscaner.app.ui.components.ProgressDialog
 import com.camscaner.app.ui.crop.ToolButton
 import com.camscaner.app.ui.components.LightSystemBarIcons
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -84,6 +88,8 @@ fun FilterScreen(session: ScanSessionViewModel, onBack: () -> Unit, onSaved: (do
     val snackbar = remember { SnackbarHostState() }
     val pages = session.pages
     var showAdjust by remember { mutableStateOf(false) }
+    var showStraighten by remember { mutableStateOf(false) }
+    var aligning by remember { mutableStateOf(false) }
 
     LaunchedEffect(pages.size) {
         // pages are also cleared by a successful save, which navigates on its own
@@ -122,6 +128,21 @@ fun FilterScreen(session: ScanSessionViewModel, onBack: () -> Unit, onSaved: (do
         vm.renderThumbnails(page)
     }
     val appliedAll = stringResource(R.string.filter_applied_all)
+    val alignedMessage = stringResource(R.string.filter_aligned)
+    val noTextMessage = stringResource(R.string.filter_align_no_text)
+
+    fun autoAlign() {
+        if (aligning) return
+        aligning = true
+        scope.launch {
+            val found = try {
+                session.autoAlign(index)
+            } finally {
+                aligning = false
+            }
+            snackbar.showSnackbar(if (found) alignedMessage else noTextMessage)
+        }
+    }
 
     fun save() = session.save(Share.defaultDocumentName(context))
 
@@ -155,7 +176,7 @@ fun FilterScreen(session: ScanSessionViewModel, onBack: () -> Unit, onSaved: (do
                 if (bmp != null) {
                     Image(bmp, contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
                 }
-                if (vm.busy || bmp == null) CircularProgressIndicator()
+                if (vm.busy || bmp == null || aligning) CircularProgressIndicator()
                 if (pages.size > 1) {
                     IconButton(
                         onClick = { session.currentIndex = (index - 1).coerceAtLeast(0) },
@@ -168,6 +189,20 @@ fun FilterScreen(session: ScanSessionViewModel, onBack: () -> Unit, onSaved: (do
                         modifier = Modifier.align(Alignment.CenterEnd),
                     ) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = Color.White) }
                 }
+            }
+
+            AnimatedVisibility(showStraighten) {
+                StraightenPanel(
+                    auto = page.skew == null,
+                    angle = page.skew ?: vm.appliedSkew,
+                    onAutoChange = { auto ->
+                        // switching auto off keeps the measured angle as the starting point
+                        session.update(index) { it.copy(skew = if (auto) null else vm.appliedSkew) }
+                    },
+                    onAngleChange = { v -> session.update(index) { it.copy(skew = (v * 10).roundToInt() / 10f) } },
+                    onReset = { session.update(index) { it.copy(skew = 0f) } },
+                    onAutoAlign = ::autoAlign,
+                )
             }
 
             AnimatedVisibility(showAdjust) {
@@ -230,16 +265,24 @@ fun FilterScreen(session: ScanSessionViewModel, onBack: () -> Unit, onSaved: (do
                 Modifier.fillMaxWidth().background(Color(0xFF181C1B)).navigationBarsPadding().padding(vertical = 6.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly,
             ) {
-                ToolButton(Icons.Filled.Rotate90DegreesCcw, stringResource(R.string.crop_rotate_left)) {
-                    session.update(index) { it.copy(rotation = (it.rotation + 270) % 360) }
-                }
-                ToolButton(Icons.Filled.Rotate90DegreesCw, stringResource(R.string.crop_rotate_right)) {
+                ToolButton(Icons.Filled.Rotate90DegreesCw, stringResource(R.string.page_rotate)) {
                     session.update(index) { it.copy(rotation = (it.rotation + 90) % 360) }
+                }
+                ToolButton(Icons.Filled.AutoFixHigh, stringResource(R.string.filter_auto_align), onClick = ::autoAlign)
+                ToolButton(
+                    Icons.Filled.Straighten, stringResource(R.string.filter_straighten),
+                    tint = if (showStraighten) MaterialTheme.colorScheme.primary else Color.White,
+                ) {
+                    showStraighten = !showStraighten
+                    showAdjust = false
                 }
                 ToolButton(
                     Icons.Filled.Tune, stringResource(R.string.filter_adjust),
                     tint = if (showAdjust) MaterialTheme.colorScheme.primary else Color.White,
-                ) { showAdjust = !showAdjust }
+                ) {
+                    showAdjust = !showAdjust
+                    showStraighten = false
+                }
                 if (pages.size > 1) {
                     ToolButton(Icons.Filled.DoneAll, stringResource(R.string.filter_apply_all)) {
                         val f = page.filter
@@ -259,6 +302,42 @@ fun FilterScreen(session: ScanSessionViewModel, onBack: () -> Unit, onSaved: (do
         )
     }
 }
+
+/** Straightening controls: automatic measuring, a fine angle slider and automatic alignment. */
+@Composable
+private fun StraightenPanel(
+    auto: Boolean,
+    angle: Float,
+    onAutoChange: (Boolean) -> Unit,
+    onAngleChange: (Float) -> Unit,
+    onReset: () -> Unit,
+    onAutoAlign: () -> Unit,
+) {
+    Column(Modifier.fillMaxWidth().background(Color(0xFF181C1B)).padding(horizontal = 16.dp, vertical = 4.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                stringResource(R.string.filter_straighten_auto),
+                color = Color.White,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.weight(1f),
+            )
+            Switch(checked = auto, onCheckedChange = onAutoChange)
+        }
+        Text(
+            stringResource(R.string.filter_straighten_angle, String.format(Locale.US, "%+.1f", angle)),
+            color = Color.White.copy(alpha = 0.8f),
+            style = MaterialTheme.typography.bodySmall,
+        )
+        // moving the slider takes over from the automatic angle
+        Slider(value = angle.coerceIn(-MAX_STRAIGHTEN, MAX_STRAIGHTEN), onValueChange = onAngleChange, valueRange = -MAX_STRAIGHTEN..MAX_STRAIGHTEN)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            TextButton(onClick = onReset) { Text(stringResource(R.string.filter_reset)) }
+            TextButton(onClick = onAutoAlign) { Text(stringResource(R.string.filter_auto_align)) }
+        }
+    }
+}
+
+private const val MAX_STRAIGHTEN = 20f
 
 @Composable
 private fun AdjustSlider(label: String, value: Float, range: ClosedFloatingPointRange<Float>, onChange: (Float) -> Unit) {

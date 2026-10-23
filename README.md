@@ -16,6 +16,8 @@ của CamScanner. Toàn bộ xử lý chạy trên máy, không quảng cáo, kh
 - Tính tỉ lệ thật của tờ giấy khi chụp nghiêng (thuật toán Zhang & He) và tự khớp về đúng khổ chuẩn
   A4/A3/A5, Letter, Legal, thẻ CCCD nếu sai lệch < 3,5 %.
 - Chỉnh tay từng góc hoặc từng cạnh, có kính lúp phóng to dưới ngón tay; nút "Tự động" và "Toàn ảnh".
+- Tự căn chỉnh trang: nhận biết hướng chữ (ML Kit) và tự xoay trang về đúng chiều, kể cả ảnh chụp ngược hoặc nằm ngang.
+- Làm thẳng trang: đo độ nghiêng của dòng chữ/bảng biểu và tự sửa; có thanh chỉnh góc ±20° và nút "Tự căn chỉnh".
 
 **Làm đẹp ảnh**
 - Bộ lọc: Gốc, Làm sáng, Tăng màu (Magic Color), Xóa bóng, Thang xám, Đen trắng, Bản sao.

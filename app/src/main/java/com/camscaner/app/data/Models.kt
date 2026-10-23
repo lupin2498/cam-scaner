@@ -14,6 +14,8 @@ data class ScanPage(
     val rotation: Int = 0,
     val filter: ScanFilter = ScanFilter.MAGIC,
     val adjustments: Adjustments = Adjustments(),
+    /** Clockwise straightening in degrees after perspective correction; null measures it automatically. */
+    val skew: Float? = 0f,
     /** Size of the rendered page image in pixels. */
     val width: Int = 0,
     val height: Int = 0,
@@ -27,6 +29,7 @@ data class ScanPage(
         put("brightness", adjustments.brightness.toDouble())
         put("contrast", adjustments.contrast.toDouble())
         put("sharpness", adjustments.sharpness.toDouble())
+        if (skew == null) put("skewAuto", true) else put("skew", skew.toDouble())
         put("width", width)
         put("height", height)
         put("updatedAt", updatedAt)
@@ -47,6 +50,8 @@ data class ScanPage(
                     contrast = o.optDouble("contrast", 0.0).toFloat(),
                     sharpness = o.optDouble("sharpness", 0.0).toFloat(),
                 ),
+                // pages saved before straightening existed keep their look
+                skew = if (o.optBoolean("skewAuto", false)) null else o.optDouble("skew", 0.0).toFloat(),
                 width = o.optInt("width", 0),
                 height = o.optInt("height", 0),
                 updatedAt = o.optLong("updatedAt", 0L),
@@ -97,6 +102,8 @@ data class DraftPage(
     val rotation: Int = 0,
     val filter: ScanFilter = ScanFilter.MAGIC,
     val adjustments: Adjustments = Adjustments(),
+    /** Clockwise straightening in degrees; null measures it automatically from the text lines. */
+    val skew: Float? = null,
     /** Set when re-editing a page that already belongs to a document. */
     val existingPageId: String? = null,
 )

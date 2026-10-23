@@ -58,6 +58,12 @@ fun SettingsScreen(onBack: () -> Unit) {
             ToggleRow(stringResource(R.string.settings_auto_crop), stringResource(R.string.settings_auto_crop_desc), settings.autoCrop) {
                 settings.autoCrop = it
             }
+            ToggleRow(stringResource(R.string.settings_auto_align), stringResource(R.string.settings_auto_align_desc), settings.autoAlign) {
+                settings.autoAlign = it
+            }
+            ToggleRow(stringResource(R.string.settings_auto_straighten), stringResource(R.string.settings_auto_straighten_desc), settings.autoStraighten) {
+                settings.autoStraighten = it
+            }
             ToggleRow(stringResource(R.string.settings_auto_capture), null, settings.autoCapture) { settings.autoCapture = it }
             ToggleRow(stringResource(R.string.settings_grid), null, settings.showGrid) { settings.showGrid = it }
             Spacer(Modifier.height(24.dp))

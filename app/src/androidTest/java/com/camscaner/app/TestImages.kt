@@ -74,6 +74,23 @@ object TestImages {
         return Scene(scene, corners, paperRatio)
     }
 
+    /** The printed sheet itself, flat and level (as after perspective correction). */
+    fun flatPage(width: Int = 1000, ratio: Double = 1 / sqrt(2.0)): Bitmap = paper(width, (width / ratio).toInt())
+
+    /** [scene] photographed with the camera turned: the photo is rotated clockwise by [degrees]. */
+    fun turned(scene: Scene, degrees: Int): Scene {
+        val m = Matrix().apply { postRotate(degrees.toFloat()) }
+        val bmp = Bitmap.createBitmap(scene.bitmap, 0, 0, scene.bitmap.width, scene.bitmap.height, m, true)
+        fun map(p: Pt): Pt = when ((degrees % 360 + 360) % 360) {
+            90 -> Pt(1f - p.y, p.x)
+            180 -> Pt(1f - p.x, 1f - p.y)
+            270 -> Pt(p.y, 1f - p.x)
+            else -> p
+        }
+        val c = scene.corners
+        return Scene(bmp, Corners.ordered(listOf(map(c.tl), map(c.tr), map(c.br), map(c.bl))), scene.paperRatio)
+    }
+
     private fun paper(pw: Int, ph: Int): Bitmap {
         val paper = Bitmap.createBitmap(pw, ph, Bitmap.Config.ARGB_8888)
         val c = Canvas(paper)

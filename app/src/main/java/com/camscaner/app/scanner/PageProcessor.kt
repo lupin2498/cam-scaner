@@ -65,8 +65,10 @@ object PageProcessor {
         filter: ScanFilter,
         adjustments: Adjustments,
         maxDim: Int = MAX_PAGE,
+        skew: Float? = 0f,
     ): Bitmap {
-        return enhanceAndRotate(warp(original, corners, maxDim), rotation, filter, adjustments)
+        val (straight, _) = PageAligner.straighten(warp(original, corners, maxDim), skew)
+        return enhanceAndRotate(straight, rotation, filter, adjustments)
     }
 
     fun render(
@@ -76,6 +78,7 @@ object PageProcessor {
         filter: ScanFilter,
         adjustments: Adjustments,
         maxDim: Int = MAX_PAGE,
+        skew: Float? = 0f,
     ): Bitmap {
         val original = ImageIO.decodeSampled(originalFile, ImageIO.MAX_ORIGINAL)
             ?: error("Cannot decode ${originalFile.name}")
@@ -85,7 +88,8 @@ object PageProcessor {
         } finally {
             original.recycle()
         }
-        return enhanceAndRotate(warped, rotation, filter, adjustments)
+        val (straight, _) = PageAligner.straighten(warped, skew)
+        return enhanceAndRotate(straight, rotation, filter, adjustments)
     }
 
     private fun enhanceAndRotate(warped: Bitmap, rotation: Int, filter: ScanFilter, adjustments: Adjustments): Bitmap {

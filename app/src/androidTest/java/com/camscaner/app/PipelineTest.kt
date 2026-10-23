@@ -4,10 +4,15 @@ import android.graphics.Color
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.camscaner.app.scanner.Adjustments
 import com.camscaner.app.scanner.DocumentDetector
+import com.camscaner.app.ocr.AutoAligner
 import com.camscaner.app.scanner.ImageEnhancer
+import com.camscaner.app.scanner.ImageIO
+import com.camscaner.app.scanner.PageAligner
 import com.camscaner.app.scanner.PageProcessor
 import com.camscaner.app.scanner.ScanFilter
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -54,6 +59,50 @@ class PipelineTest {
         val rotated = PageProcessor.render(scene.bitmap, corners, 90, ScanFilter.MAGIC, Adjustments())
         assertEquals(page.width, rotated.height)
         assertEquals(page.height, rotated.width)
+    }
+
+    @Test
+    fun straightenLevelsTiltedPage() {
+        val page = TestImages.flatPage()
+        for (tilt in listOf(-6f, 2.5f, 11f)) {
+            val tilted = PageAligner.rotate(page, tilt)
+            val estimate = PageAligner.measure(tilted)
+            assertNotNull("no lines found for tilt $tilt", estimate)
+            // a page turned clockwise is corrected counter-clockwise
+            assertEquals("tilt $tilt", -tilt, estimate!!.correction, 0.3f)
+            assertFalse(estimate.sideways)
+            val fixed = PageAligner.rotate(tilted, estimate.correction)
+            assertEquals("after fixing $tilt", 0f, PageAligner.autoCorrection(fixed), 0.3f)
+        }
+    }
+
+    @Test
+    fun straightenIgnoresPagesWithoutText() {
+        val photo = android.graphics.Bitmap.createBitmap(900, 1200, android.graphics.Bitmap.Config.ARGB_8888)
+        photo.eraseColor(Color.rgb(200, 190, 180))
+        assertEquals(0f, PageAligner.autoCorrection(photo), 0f)
+    }
+
+    @Test
+    fun autoAlignTurnsPagesUpright() = runBlocking {
+        val page = TestImages.flatPage()
+        for (turn in listOf(0, 90, 180, 270)) {
+            // the page as it comes out of the warp when photographed turned clockwise
+            val turned = ImageIO.rotate(page.copy(android.graphics.Bitmap.Config.ARGB_8888, false), turn)
+            val alignment = AutoAligner.analyze(turned)
+            assertEquals("page turned by $turn", (360 - turn) % 360, alignment.rotation)
+        }
+    }
+
+    @Test
+    fun renderAppliesStraightening() {
+        val page = TestImages.flatPage()
+        val tilted = PageAligner.rotate(page, 5f)
+        val auto = PageProcessor.render(tilted, null, 0, ScanFilter.ORIGINAL, Adjustments(), 1400, skew = null)
+        assertEquals(0f, PageAligner.autoCorrection(auto), 0.4f)
+        // a manual angle is applied as given; 0 keeps the page as it is
+        val kept = PageProcessor.render(tilted, null, 0, ScanFilter.ORIGINAL, Adjustments(), 1400, skew = 0f)
+        assertEquals(-5f, PageAligner.measure(kept)!!.correction, 0.4f)
     }
 
     @Test

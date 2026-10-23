@@ -13,6 +13,9 @@ import androidx.compose.ui.test.hasScrollToNodeAction
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.hasSetProgressAction
 import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -112,8 +115,59 @@ class UiFlowTest {
         return filter
     }
 
+    /** First page of the activity's scan session. */
+    private fun firstDraft(): com.camscaner.app.data.DraftPage? {
+        var page: com.camscaner.app.data.DraftPage? = null
+        scenario?.onActivity { activity ->
+            val session = androidx.lifecycle.ViewModelProvider(activity)[com.camscaner.app.ui.ScanSessionViewModel::class.java]
+            page = session.pages.firstOrNull()
+        }
+        return page
+    }
+
     private companion object {
         const val TAG = "CamScanerTest"
+    }
+
+    /** A page photographed upside down is turned upright on import; straighten panel and auto-align. */
+    @Test
+    fun upsideDownImportIsAlignedAndStraightened() {
+        val scene = TestImages.turned(TestImages.documentPhoto(rx = 0.15, ry = 0.08), 180)
+        val file = TestImages.save(scene.bitmap, File(context.cacheDir, "exports/upside_down.jpg"))
+        val intent = Intent(context, MainActivity::class.java)
+            .setAction(Intent.ACTION_SEND)
+            .setType("image/jpeg")
+            .putExtra(Intent.EXTRA_STREAM, Share.uriFor(context, file))
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        scenario = ActivityScenario.launch(intent)
+
+        compose.waitText(str(R.string.crop_auto), 30_000)
+        assertEquals(180, firstDraft()?.rotation)
+        assertEquals(null, firstDraft()?.skew)
+        compose.onAllNodesWithText(str(R.string.next)).onFirst().performClick()
+        compose.waitText(str(R.string.filter_original))
+
+        // turn the page the wrong way, then let auto-align fix it again
+        compose.onNodeWithText(str(R.string.page_rotate)).performClick()
+        compose.waitUntil(5_000) { firstDraft()?.rotation == 270 }
+        compose.onNodeWithText(str(R.string.filter_straighten)).performClick()
+        compose.waitText(str(R.string.filter_straighten_auto))
+        Thread.sleep(1500)
+        shot("17_straighten")
+        compose.onAllNodesWithText(str(R.string.filter_auto_align)).onFirst().performClick()
+        compose.waitText(str(R.string.filter_aligned), 30_000)
+        assertEquals(180, firstDraft()?.rotation)
+
+        // a manual angle replaces the automatic one
+        compose.onNode(hasSetProgressAction()).performSemanticsAction(SemanticsActions.SetProgress) { it(3f) }
+        compose.waitUntil(5_000) { firstDraft()?.skew == 3f }
+        Thread.sleep(1500)
+        shot("18_straighten_manual")
+        compose.onNodeWithContentDescription(str(R.string.save)).performClick()
+        compose.waitText(str(R.string.doc_export_pdf), 60_000)
+        val page = app.documents.documents.value.single().pages.single()
+        assertEquals(180, page.rotation)
+        assertEquals(3f, page.skew)
     }
 
     @Test
