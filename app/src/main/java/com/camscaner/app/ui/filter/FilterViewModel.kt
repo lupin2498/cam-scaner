@@ -40,9 +40,12 @@ class FilterViewModel : ViewModel() {
     /** Straightening shown in the preview, in clockwise degrees (measured when the page is on auto). */
     var appliedSkew by mutableStateOf(0f)
         private set
+    /** Page [appliedSkew] belongs to; it is stale while another page's preview is computed. */
+    var appliedSkewPage by mutableStateOf<String?>(null)
+        private set
 
     private val warpCache = LinkedHashMap<String, Bitmap>()
-    private val straightCache = LinkedHashMap<String, Pair<Bitmap, Float>>()
+    private val autoSkews = HashMap<String, Float>()
     private val cacheLock = Mutex()
     private var previewJob: Job? = null
     private var thumbsJob: Job? = null
@@ -61,17 +64,22 @@ class FilterViewModel : ViewModel() {
             delay(40) // coalesce slider updates
             try {
                 val (bitmap, angle) = withContext(Dispatchers.Default) {
-                    val (straight, angle) = straightened(page)
+                    val warped = warped(page, PREVIEW_SIZE)
+                    val angle = angleFor(page)
+                    // the cached warp is shared: only a bitmap made here may be recycled
+                    val straight = PageAligner.rotate(warped, angle)
                     val enhanced = if (page.filter == ScanFilter.ORIGINAL && page.adjustments.isNeutral) {
-                        straight.copy(Bitmap.Config.ARGB_8888, false)
+                        if (straight !== warped) straight else warped.copy(Bitmap.Config.ARGB_8888, false)
                     } else {
                         ImageEnhancer.enhance(straight, page.filter, page.adjustments)
+                            .also { if (straight !== warped) straight.recycle() }
                     }
                     ImageIO.rotate(enhanced, page.rotation) to angle
                 }
                 preview = bitmap.asImageBitmap()
                 previewKey = key
                 appliedSkew = angle
+                appliedSkewPage = page.id
                 busy = false
             } catch (e: CancellationException) {
                 // superseded by a newer render, which owns `busy` now
@@ -89,9 +97,13 @@ class FilterViewModel : ViewModel() {
         thumbsJob?.cancel()
         if (key == thumbnailsKey) return
         thumbsJob = viewModelScope.launch {
+            // the straighten slider changes the key on every step; wait until it rests
+            delay(150)
             val result = try {
                 withContext(Dispatchers.Default) {
-                    val small = ImageIO.scaleDown(straightened(page).first.copy(Bitmap.Config.ARGB_8888, false), THUMB_SIZE)
+                    val scaled = ImageIO.scaleDown(warped(page, PREVIEW_SIZE).copy(Bitmap.Config.ARGB_8888, false), THUMB_SIZE)
+                    val small = PageAligner.rotate(scaled, angleFor(page))
+                    if (small !== scaled) scaled.recycle()
                     val map = ScanFilter.entries.associateWith { f ->
                         val out = if (f == ScanFilter.ORIGINAL) small.copy(Bitmap.Config.ARGB_8888, false)
                         else ImageEnhancer.enhance(small, f)
@@ -112,22 +124,18 @@ class FilterViewModel : ViewModel() {
     }
 
     /**
-     * The preview-size page after perspective correction and straightening, with the clockwise
-     * angle used. Cached like the warp: the result is shared and must not be recycled.
+     * Clockwise straightening of [page]: its manual angle, or the automatic one measured on the
+     * preview warp, which is the same input saved pages are measured on.
      */
-    private suspend fun straightened(page: DraftPage): Pair<Bitmap, Float> {
-        val key = "${page.originalFile.absolutePath}|${page.corners}|${page.skew}"
+    private suspend fun angleFor(page: DraftPage): Float {
+        page.skew?.let { return it }
+        val key = "${page.originalFile.absolutePath}|${page.corners}"
         cacheLock.withLock {
-            straightCache[key]?.let { return it }
+            autoSkews[key]?.let { return it }
         }
-        val warped = warped(page, PREVIEW_SIZE)
-        val angle = page.skew ?: PageAligner.autoCorrection(warped)
-        val result = PageAligner.rotate(warped, angle) to angle
-        cacheLock.withLock {
-            straightCache[key] = result
-            while (straightCache.size > 6) straightCache.remove(straightCache.keys.first())
-        }
-        return result
+        val angle = PageAligner.autoCorrection(warped(page, PREVIEW_SIZE))
+        cacheLock.withLock { autoSkews[key] = angle }
+        return angle
     }
 
     private suspend fun warped(page: DraftPage, size: Int): Bitmap {
@@ -151,7 +159,8 @@ class FilterViewModel : ViewModel() {
     }
 
     private companion object {
-        const val PREVIEW_SIZE = 1400
+        /** Equal to the size saved pages measure their automatic angle on. */
+        const val PREVIEW_SIZE = PageProcessor.MEASURE_WARP
         const val THUMB_SIZE = 220
     }
 }

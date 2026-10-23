@@ -17,6 +17,32 @@ object PageProcessor {
     const val MAX_PAGE = 3200
 
     /**
+     * Size of the warp the automatic straightening angle is measured on. Previews and saved pages
+     * measure the same pixels, so both always get the same angle.
+     */
+    const val MEASURE_WARP = 1400
+
+    /** Decodes [originalFile] the way previews do and warps it to [size] for measuring. */
+    fun measureWarp(originalFile: File, corners: Corners?, size: Int = MEASURE_WARP): Bitmap? {
+        val original = ImageIO.decodeSampled(originalFile, size * 5 / 4) ?: return null
+        return try {
+            warp(original, corners, size)
+        } finally {
+            original.recycle()
+        }
+    }
+
+    /** Automatic straightening angle (clockwise degrees) of a page, 0 when none is needed. */
+    fun autoSkew(originalFile: File, corners: Corners?): Float {
+        val warped = measureWarp(originalFile, corners) ?: return 0f
+        return try {
+            PageAligner.autoCorrection(warped)
+        } finally {
+            warped.recycle()
+        }
+    }
+
+    /**
      * Perspective-corrects [original] (upright) using normalized [corners].
      * The output aspect ratio is the real one of the sheet, snapped to a standard paper size
      * (A-series, Letter, Legal, ID card) when it is close enough.
@@ -80,6 +106,7 @@ object PageProcessor {
         maxDim: Int = MAX_PAGE,
         skew: Float? = 0f,
     ): Bitmap {
+        val angle = skew ?: autoSkew(originalFile, corners)
         val original = ImageIO.decodeSampled(originalFile, ImageIO.MAX_ORIGINAL)
             ?: error("Cannot decode ${originalFile.name}")
         // the full-size original is released before enhancement, which needs most of the memory
@@ -88,7 +115,7 @@ object PageProcessor {
         } finally {
             original.recycle()
         }
-        val (straight, _) = PageAligner.straighten(warped, skew)
+        val (straight, _) = PageAligner.straighten(warped, angle)
         return enhanceAndRotate(straight, rotation, filter, adjustments)
     }
 

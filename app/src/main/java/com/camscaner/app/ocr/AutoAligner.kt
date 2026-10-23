@@ -8,7 +8,9 @@ import com.camscaner.app.scanner.PageProcessor
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
 import java.io.File
 import kotlin.math.abs
 
@@ -53,10 +55,13 @@ object AutoAligner {
         val skew = estimate?.correction?.takeIf { abs(it) >= PageAligner.MIN_CORRECTION } ?: 0f
         val straight = PageAligner.rotate(page, skew)
         if (straight !== page) page.recycle()
-        return try {
-            Alignment(orientation(straight, estimate?.sideways), skew)
-        } finally {
-            straight.recycle()
+        // ML Kit keeps reading the bitmap after a cancelled await; finish before recycling it
+        return withContext(NonCancellable) {
+            try {
+                Alignment(orientation(straight, estimate?.sideways), skew)
+            } finally {
+                straight.recycle()
+            }
         }
     }
 

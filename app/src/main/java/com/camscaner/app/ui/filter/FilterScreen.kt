@@ -192,12 +192,14 @@ fun FilterScreen(session: ScanSessionViewModel, onBack: () -> Unit, onSaved: (do
             }
 
             AnimatedVisibility(showStraighten) {
+                // the measured angle is only known once this page's preview has been rendered
+                val measured = if (vm.appliedSkewPage == page.id) vm.appliedSkew else null
                 StraightenPanel(
                     auto = page.skew == null,
-                    angle = page.skew ?: vm.appliedSkew,
+                    angle = page.skew ?: measured,
                     onAutoChange = { auto ->
                         // switching auto off keeps the measured angle as the starting point
-                        session.update(index) { it.copy(skew = if (auto) null else vm.appliedSkew) }
+                        session.update(index) { it.copy(skew = if (auto) null else measured ?: 0f) }
                     },
                     onAngleChange = { v -> session.update(index) { it.copy(skew = (v * 10).roundToInt() / 10f) } },
                     onReset = { session.update(index) { it.copy(skew = 0f) } },
@@ -307,7 +309,7 @@ fun FilterScreen(session: ScanSessionViewModel, onBack: () -> Unit, onSaved: (do
 @Composable
 private fun StraightenPanel(
     auto: Boolean,
-    angle: Float,
+    angle: Float?,
     onAutoChange: (Boolean) -> Unit,
     onAngleChange: (Float) -> Unit,
     onReset: () -> Unit,
@@ -321,15 +323,20 @@ private fun StraightenPanel(
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.weight(1f),
             )
-            Switch(checked = auto, onCheckedChange = onAutoChange)
+            Switch(checked = auto, onCheckedChange = onAutoChange, enabled = angle != null)
         }
         Text(
-            stringResource(R.string.filter_straighten_angle, String.format(Locale.US, "%+.1f", angle)),
+            stringResource(R.string.filter_straighten_angle, angle?.let { String.format(Locale.US, "%+.1f", it) } ?: "…"),
             color = Color.White.copy(alpha = 0.8f),
             style = MaterialTheme.typography.bodySmall,
         )
         // moving the slider takes over from the automatic angle
-        Slider(value = angle.coerceIn(-MAX_STRAIGHTEN, MAX_STRAIGHTEN), onValueChange = onAngleChange, valueRange = -MAX_STRAIGHTEN..MAX_STRAIGHTEN)
+        Slider(
+            value = (angle ?: 0f).coerceIn(-MAX_STRAIGHTEN, MAX_STRAIGHTEN),
+            onValueChange = onAngleChange,
+            valueRange = -MAX_STRAIGHTEN..MAX_STRAIGHTEN,
+            enabled = angle != null,
+        )
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             TextButton(onClick = onReset) { Text(stringResource(R.string.filter_reset)) }
             TextButton(onClick = onAutoAlign) { Text(stringResource(R.string.filter_auto_align)) }
