@@ -80,7 +80,8 @@ class FilterViewModel : ViewModel() {
     fun render(page: DraftPage) {
         val baseKey = "${page.id}|${page.originalFile.absolutePath}|${page.corners}|${page.rotation}|${page.skew}"
         val filterKey = "$baseKey|${page.filter}|${page.adjustments}"
-        val key = "$filterKey|${page.marks}"
+        // marks can hold thousands of points; their hash identifies them without a huge string
+        val key = "$filterKey|${page.marks.size}|${page.marks.hashCode()}"
         // a render for an intermediate state may still be running; it must not overwrite the
         // preview once the page is back to the state already shown
         previewJob?.cancel()
@@ -139,7 +140,7 @@ class FilterViewModel : ViewModel() {
                 cleanKey = filterKey
             }
         }
-        val originalWithMarks = "$baseKey|${page.marks}"
+        val originalWithMarks = "$baseKey|${page.marks.size}|${page.marks.hashCode()}"
         val unfiltered = originalBitmap?.takeIf { originalKey == originalWithMarks } ?: run {
             val turned = ImageIO.rotate(level.copy(Bitmap.Config.ARGB_8888, page.marks.isNotEmpty()), page.rotation)
             withMarks(turned, page).also {

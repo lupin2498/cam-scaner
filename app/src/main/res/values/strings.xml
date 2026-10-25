@@ -96,6 +96,8 @@
     <string name="filter_sign">Ký tên</string>
     <string name="filter_extract_text">Trích xuất văn bản</string>
     <string name="filter_extracting">Đang trích xuất văn bản…</string>
+    <string name="page_previous">Trang trước</string>
+    <string name="page_next">Trang sau</string>
     <string name="markup_pen">Bút</string>
     <string name="markup_highlighter">Dạ quang</string>
     <string name="markup_undo">Hoàn tác</string>

@@ -255,12 +255,12 @@ fun FilterScreen(session: ScanSessionViewModel, onBack: () -> Unit, onSaved: (do
                         onClick = { session.currentIndex = (index - 1).coerceAtLeast(0) },
                         enabled = index > 0,
                         modifier = Modifier.align(Alignment.CenterStart),
-                    ) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, null, tint = Color.White) }
+                    ) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, stringResource(R.string.page_previous), tint = Color.White) }
                     IconButton(
                         onClick = { session.currentIndex = (index + 1).coerceAtMost(pages.lastIndex) },
                         enabled = index < pages.lastIndex,
                         modifier = Modifier.align(Alignment.CenterEnd),
-                    ) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = Color.White) }
+                    ) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, stringResource(R.string.page_next), tint = Color.White) }
                     Text(
                         "${index + 1}/${pages.size}",
                         color = Color.White,

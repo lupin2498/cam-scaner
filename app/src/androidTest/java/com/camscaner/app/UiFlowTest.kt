@@ -129,11 +129,14 @@ class UiFlowTest {
     }
 
     /** First page of the activity's scan session. */
-    private fun firstDraft(): com.camscaner.app.data.DraftPage? {
+    private fun firstDraft(): com.camscaner.app.data.DraftPage? = draft(0)
+
+    /** Page [index] of the activity's scan session. */
+    private fun draft(index: Int): com.camscaner.app.data.DraftPage? {
         var page: com.camscaner.app.data.DraftPage? = null
         scenario?.onActivity { activity ->
             val session = androidx.lifecycle.ViewModelProvider(activity)[com.camscaner.app.ui.ScanSessionViewModel::class.java]
-            page = session.pages.firstOrNull()
+            page = session.pages.getOrNull(index)
         }
         return page
     }
@@ -499,9 +502,138 @@ class UiFlowTest {
             val x = (stroke.points[2 * i] * (saved.width - 1)).toInt()
             val y = (stroke.points[2 * i + 1] * (saved.height - 1)).toInt()
             val px = saved.getPixel(x, y)
-            android.graphics.Color.red(px) > 170 && android.graphics.Color.green(px) < 110
+            // JPEG blurs the colour of a thin line; it stays clearly red, unlike text or paper
+            android.graphics.Color.red(px) - android.graphics.Color.green(px) > 60
         }
         assertTrue("red ink at $red of $n stroke points", red > n / 2)
+    }
+
+    /** Several pages: marks belong to their page and turn with it, a signature is moved and undone at once. */
+    @Test
+    fun marksOnSeveralPages() {
+        val uris = (0 until 2).map { i ->
+            val scene = TestImages.documentPhoto(rx = 0.05 * (i + 1), ry = 0.05)
+            Share.uriFor(context, TestImages.save(scene.bitmap, File(context.cacheDir, "exports/batch_$i.jpg")))
+        }
+        val intent = Intent(context, MainActivity::class.java)
+            .setAction(Intent.ACTION_SEND_MULTIPLE)
+            .setType("image/jpeg")
+            .putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(uris))
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        scenario = ActivityScenario.launch(intent)
+
+        compose.waitDescription(str(R.string.crop_editor), 30_000)
+        compose.waitUntil(20_000) { draft(1) != null }
+        compose.onAllNodesWithText(str(R.string.next)).onFirst().performClick()
+        // exact match: the crop screen title also contains "1/2"
+        compose.waitOrDump(hasText("1/2"), "page 1/2", 20_000)
+        waitUntilIdleProgress()
+
+        // a stroke on page 1; turning the page turns the stroke with it
+        compose.onNodeWithText(str(R.string.filter_markup)).performScrollTo().performClick()
+        compose.waitDescription(str(R.string.markup_hint))
+        compose.onNodeWithContentDescription(str(R.string.markup_hint)).performTouchInput {
+            swipe(Offset(width * 0.3f, height * 0.4f), Offset(width * 0.6f, height * 0.42f), 300)
+        }
+        compose.onNodeWithContentDescription(str(R.string.done)).performClick()
+        compose.waitUntil(5_000) { draft(0)?.marks?.size == 1 }
+        val stroke = draft(0)!!.marks[0]
+        val turned = (draft(0)!!.rotation + 270) % 360
+        compose.onNodeWithText(str(R.string.crop_rotate_left)).performClick()
+        compose.waitUntil(5_000) { draft(0)?.rotation == turned }
+        assertEquals(stroke.rotated(270), draft(0)!!.marks.single())
+
+        // page 2 gets a signature, dragged from the centre towards the bottom right
+        compose.onNodeWithContentDescription(str(R.string.page_next)).performClick()
+        // exact match: the crop screen title also contains "2/2"
+        compose.waitOrDump(hasText("2/2"), "page 2/2", 20_000)
+        waitUntilIdleProgress()
+        compose.onNodeWithText(str(R.string.filter_sign)).performScrollTo().performClick()
+        compose.waitDescription(str(R.string.sign_pad_title))
+        compose.onNodeWithContentDescription(str(R.string.sign_pad_title)).performTouchInput {
+            swipe(Offset(width * 0.2f, height * 0.6f), Offset(width * 0.5f, height * 0.3f), 300)
+            swipe(Offset(width * 0.5f, height * 0.3f), Offset(width * 0.8f, height * 0.6f), 300)
+        }
+        compose.onNodeWithText(str(R.string.sign_place)).performClick()
+        compose.waitForIdle()
+        Thread.sleep(500)
+        compose.onNodeWithContentDescription(str(R.string.markup_hint)).performTouchInput {
+            swipe(center, Offset(center.x + width * 0.2f, center.y + height * 0.25f), 500)
+        }
+        compose.waitForIdle()
+        shot("26_signature_moved")
+        compose.onNodeWithContentDescription(str(R.string.done)).performClick()
+        compose.waitUntil(5_000) { draft(1)?.marks?.isNotEmpty() == true }
+        val signature = draft(1)!!.marks
+        assertTrue(signature.all { it.group == 1 })
+        val xs = signature.flatMap { m -> m.points.filterIndexed { i, _ -> i % 2 == 0 } }
+        val ys = signature.flatMap { m -> m.points.filterIndexed { i, _ -> i % 2 == 1 } }
+        assertTrue("signature not moved: x ${xs.average()} y ${ys.average()}", xs.average() > 0.55 && ys.average() > 0.6)
+        assertEquals(1, draft(0)!!.marks.size)
+
+        // one undo in the pen editor removes the whole signature
+        compose.onNodeWithText(str(R.string.filter_markup)).performScrollTo().performClick()
+        compose.waitDescription(str(R.string.markup_hint))
+        compose.onNodeWithText(str(R.string.markup_undo)).performClick()
+        compose.onNodeWithContentDescription(str(R.string.done)).performClick()
+        compose.waitUntil(5_000) { draft(1)?.marks?.isEmpty() == true }
+
+        waitUntilIdleProgress()
+        compose.onNodeWithContentDescription(str(R.string.save)).performClick()
+        compose.waitText(str(R.string.doc_export_pdf), 60_000)
+        val pages = app.documents.documents.value.single().pages
+        assertEquals(2, pages.size)
+        assertEquals(turned, pages[0].rotation)
+        assertEquals(listOf(stroke.rotated(270)), pages[0].marks)
+        assertTrue(pages[1].marks.isEmpty())
+    }
+
+    /** A saved page keeps its marks: they turn with the page in the viewer and the filter screen adds to them. */
+    @Test
+    fun existingPageKeepsItsMarks() {
+        val scene = TestImages.documentPhoto(rx = 0.1, ry = 0.05)
+        val file = TestImages.save(scene.bitmap, File(context.cacheDir, "scan/marks_test.jpg"))
+        val mark = com.camscaner.app.scanner.MarkStroke(listOf(0.2f, 0.2f, 0.8f, 0.25f), android.graphics.Color.RED, 0.006f)
+        val draft = com.camscaner.app.data.DraftPage(
+            id = "m1", originalFile = file, width = scene.bitmap.width, height = scene.bitmap.height,
+            detected = scene.corners, corners = scene.corners, marks = listOf(mark),
+        )
+        val docId = runBlocking { app.documents.saveDrafts(null, "Co chu ky", listOf(draft)) }
+        scenario = ActivityScenario.launch(MainActivity::class.java)
+        compose.waitText("Co chu ky")
+        compose.onNodeWithText("Co chu ky").performClick()
+        compose.waitText(str(R.string.doc_reorder_hint))
+        compose.onNodeWithText("1").performClick()
+        compose.waitText(str(R.string.page_ocr))
+
+        // turning the page in the viewer turns its marks
+        compose.onNodeWithText(str(R.string.page_rotate)).performClick()
+        compose.waitUntil(20_000) { app.documents.get(docId)!!.pages[0].rotation == 90 }
+        assertEquals(listOf(mark.rotated(90)), app.documents.get(docId)!!.pages[0].marks)
+
+        // the filter screen shows them and adds new ones
+        compose.waitUntil(10_000) { compose.onAllNodesWithText(str(R.string.page_rotating)).fetchSemanticsNodes().isEmpty() }
+        compose.onNodeWithText(str(R.string.page_filter)).performClick()
+        compose.waitText(str(R.string.filter_original))
+        compose.waitText("Co chu ky")
+        assertEquals(listOf(mark.rotated(90)), firstDraft()!!.marks)
+        waitUntilIdleProgress()
+        compose.onNodeWithText(str(R.string.filter_markup)).performScrollTo().performClick()
+        compose.waitDescription(str(R.string.markup_hint))
+        compose.onNodeWithContentDescription(str(R.string.markup_hint)).performTouchInput {
+            swipe(Offset(width * 0.3f, height * 0.6f), Offset(width * 0.6f, height * 0.62f), 300)
+        }
+        compose.onNodeWithContentDescription(str(R.string.done)).performClick()
+        compose.waitUntil(5_000) { firstDraft()?.marks?.size == 2 }
+        waitUntilIdleProgress()
+        compose.onNodeWithContentDescription(str(R.string.save)).performClick()
+
+        compose.waitText(str(R.string.page_ocr), 30_000)
+        compose.waitUntil(10_000) { app.documents.get(docId)!!.pages[0].marks.size == 2 }
+        val doc = app.documents.get(docId)!!
+        assertEquals("Co chu ky", doc.name)
+        assertEquals(90, doc.pages[0].rotation)
+        assertEquals(mark.rotated(90), doc.pages[0].marks[0])
     }
 
     /** "Add with camera" from a document appends the capture to that document. */
