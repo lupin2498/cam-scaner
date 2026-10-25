@@ -640,13 +640,30 @@ class UiFlowTest {
         compose.waitText("Co chu ky")
         assertEquals(listOf(mark.rotated(90)), firstDraft()!!.marks)
         waitUntilIdleProgress()
+        // a pen stroke, then a highlighter stroke
         compose.onNodeWithText(str(R.string.filter_markup)).performScrollTo().performClick()
         compose.waitDescription(str(R.string.markup_hint))
         compose.onNodeWithContentDescription(str(R.string.markup_hint)).performTouchInput {
             swipe(Offset(width * 0.3f, height * 0.6f), Offset(width * 0.6f, height * 0.62f), 300)
         }
+        compose.onNodeWithText(str(R.string.markup_highlighter)).performClick()
+        compose.onNodeWithContentDescription(str(R.string.markup_hint)).performTouchInput {
+            swipe(Offset(width * 0.25f, height * 0.45f), Offset(width * 0.75f, height * 0.45f), 300)
+        }
+        shot("27_markup_highlighter")
+        compose.onNodeWithContentDescription(str(R.string.done)).performClick()
+        compose.waitUntil(5_000) { firstDraft()?.marks?.size == 3 }
+        val drawn = firstDraft()!!.marks
+        assertTrue("pen stroke drawn as highlighter", !drawn[1].highlighter)
+        assertTrue("highlighter stroke drawn as pen", drawn[2].highlighter)
+        // undo takes back the last stroke only
+        waitUntilIdleProgress()
+        compose.onNodeWithText(str(R.string.filter_markup)).performScrollTo().performClick()
+        compose.waitDescription(str(R.string.markup_hint))
+        compose.onNodeWithText(str(R.string.markup_undo)).performClick()
         compose.onNodeWithContentDescription(str(R.string.done)).performClick()
         compose.waitUntil(5_000) { firstDraft()?.marks?.size == 2 }
+        assertEquals(drawn.take(2), firstDraft()!!.marks)
         waitUntilIdleProgress()
         compose.onNodeWithContentDescription(str(R.string.save)).performClick()
 
