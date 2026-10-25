@@ -244,6 +244,11 @@ class UiFlowTest {
         val movedY = (after.tl.y - before.tl.y) * dh
         assertTrue("corner moved by ($movedX, $movedY) of (150, 200)", movedX in 120f..155f && movedY in 160f..205f)
         assertEquals(before.br, after.br)
+        // "all" keeps the whole photo, "auto" brings back the detected sheet
+        compose.onNodeWithText(str(R.string.crop_full)).performClick()
+        compose.waitUntil(5_000) { firstDraft()?.corners == null }
+        compose.onNodeWithText(str(R.string.crop_auto)).performClick()
+        compose.waitUntil(10_000) { firstDraft()?.corners == before }
         compose.onAllNodesWithText(str(R.string.next)).onFirst().performClick()
 
         compose.waitDescription(str(R.string.save))
