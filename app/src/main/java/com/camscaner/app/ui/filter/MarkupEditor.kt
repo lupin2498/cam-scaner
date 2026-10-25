@@ -108,6 +108,9 @@ private const val HIGHLIGHTER_ALPHA = 110 / 255f
 /** Smallest signature, as a fraction of the page width. */
 private const val MIN_SIGNATURE = 0.08f
 
+/** Finger movements shorter than this (dp) add no point to a stroke: they only bloat it. */
+private const val MIN_STEP_DP = 1.5f
+
 /**
  * A signature drawn on the pad: [strokes] are x, y pairs normalized to its bounding box,
  * [aspect] is that box's width / height and [width] the ink width relative to the box height.
@@ -347,6 +350,7 @@ private fun PageCanvas(
         val unit = sqrt(dw * dh)
         val handle = with(density) { 12.dp.toPx() }
         val grab = with(density) { 36.dp.toPx() }
+        val minStep = with(density) { MIN_STEP_DP.dp.toPx() }
 
         fun normalized(p: Offset) = Offset(((p.x - left) / dw).coerceIn(0f, 1f), ((p.y - top) / dh).coerceIn(0f, 1f))
         fun onPage(p: Offset) = p.x in left..(left + dw) && p.y in top..(top + dh)
@@ -360,8 +364,12 @@ private fun PageCanvas(
                     down.consume()
                     current.clear()
                     normalized(down.position).let { current += it.x; current += it.y }
+                    var last = down.position
                     drag(down.id) { change ->
-                        normalized(change.position).let { current += it.x; current += it.y }
+                        if ((change.position - last).getDistance() >= minStep) {
+                            last = change.position
+                            normalized(change.position).let { current += it.x; current += it.y }
+                        }
                         change.consume()
                     }
                     val highlighter = currentInk == Ink.HIGHLIGHTER
@@ -372,20 +380,24 @@ private fun PageCanvas(
             signature != null -> Modifier.pointerInput(left, top, dw, dh, signature) {
                 var resizing = false
                 var moving = false
+                // followed here rather than through recomposition: several moves can arrive
+                // before the screen is composed again, and none of them may be lost
+                var place: Placement? = null
                 detectDragGestures(
                     onDragStart = { pos ->
-                        val box = currentPlacement?.let { screenRect(it.rect(signature, pageAspect)) }
+                        place = currentPlacement
+                        val box = place?.let { screenRect(it.rect(signature, pageAspect)) }
                         resizing = box != null && (pos - box.bottomRight).getDistance() < grab
                         moving = !resizing && box != null && box.inflate(handle).contains(pos)
                     },
                     onDrag = { change, amount ->
-                        val place = currentPlacement ?: return@detectDragGestures
+                        val from = place ?: return@detectDragGestures
                         if (!resizing && !moving) return@detectDragGestures
                         change.consume()
-                        placementChange(
-                            if (resizing) place.resized(amount.x / dw, signature, pageAspect)
-                            else place.moved(amount.x / dw, amount.y / dh, signature, pageAspect)
-                        )
+                        val next = if (resizing) from.resized(amount.x / dw, signature, pageAspect)
+                        else from.moved(amount.x / dw, amount.y / dh, signature, pageAspect)
+                        place = next
+                        placementChange(next)
                     },
                     onDragEnd = { resizing = false; moving = false },
                     onDragCancel = { resizing = false; moving = false },
@@ -527,6 +539,7 @@ private fun SignaturePad(initialColor: Int, onPlace: (Signature) -> Unit, onCanc
     val current = remember { mutableStateListOf<Offset>() }
     var color by remember { mutableIntStateOf(initialColor) }
     val inkWidth = with(LocalDensity.current) { 3.dp.toPx() }
+    val minStep = with(LocalDensity.current) { MIN_STEP_DP.dp.toPx() }
     val title = stringResource(R.string.sign_pad_title)
     val colorLabel = stringResource(R.string.markup_color)
     val accent = MaterialTheme.colorScheme.primary
@@ -563,7 +576,7 @@ private fun SignaturePad(initialColor: Int, onPlace: (Signature) -> Unit, onCanc
                                 current.clear()
                                 current += down.position
                                 drag(down.id) { change ->
-                                    current += change.position
+                                    if ((change.position - current.last()).getDistance() >= minStep) current += change.position
                                     change.consume()
                                 }
                                 strokes.add(current.toList())

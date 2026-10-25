@@ -25,7 +25,8 @@ data class MarkStroke(
     val group: Int = 0,
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
-        put("p", JSONArray().apply { points.forEach { put(it.toDouble()) } })
+        // a ten-thousandth of the page is a third of a pixel on the largest page; more digits only bloat the file
+        put("p", JSONArray().apply { points.forEach { put(Math.round(it * 10_000.0) / 10_000.0) } })
         put("c", color)
         put("w", width.toDouble())
         if (highlighter) put("h", true)

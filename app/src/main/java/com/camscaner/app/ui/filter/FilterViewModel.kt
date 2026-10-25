@@ -65,6 +65,8 @@ class FilterViewModel : ViewModel() {
     private val cacheLock = Mutex()
     private var previewJob: Job? = null
     private var thumbsJob: Job? = null
+    /** Key [thumbsJob] is rendering. */
+    private var thumbsJobKey = ""
 
     // Intermediate images of the last preview, reused while only later steps change (a filter
     // slider does not straighten again, a new stroke does not filter again). Only touched under
@@ -157,8 +159,11 @@ class FilterViewModel : ViewModel() {
 
     fun renderThumbnails(page: DraftPage) {
         val key = "${page.id}|${page.corners}|${page.rotation}|${page.skew}"
+        // filters, strength and marks do not change the thumbnails: a running render is kept
+        if (key == thumbsJobKey && thumbsJob?.isActive == true) return
         thumbsJob?.cancel()
         if (key == thumbnailsKey) return
+        thumbsJobKey = key
         thumbsJob = viewModelScope.launch {
             // the straighten slider changes the key on every step; wait until it rests
             delay(150)

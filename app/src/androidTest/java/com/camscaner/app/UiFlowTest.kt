@@ -106,9 +106,13 @@ class UiFlowTest {
 
     private fun str(id: Int, vararg args: Any) = context.getString(id, *args)
 
-    /** The test clock drives composition, so let pending frames run before capturing the screen. */
+    /**
+     * The test clock drives composition, so let pending frames run before capturing the screen,
+     * then give the last frame time to reach the display.
+     */
     private fun shot(name: String) {
         compose.waitForIdle()
+        Thread.sleep(300)
         TestImages.screenshot(name)
     }
 
@@ -223,6 +227,23 @@ class UiFlowTest {
         compose.waitDescription(str(R.string.crop_editor))
         Thread.sleep(800)
         shot("03_crop")
+
+        // dragging a corner moves it by the whole drag, past the touch slop
+        val before = firstDraft()!!.corners!!
+        val editor = compose.onNodeWithContentDescription(str(R.string.crop_editor))
+        val size = editor.fetchSemanticsNode().size
+        val pad = 28 * context.resources.displayMetrics.density
+        val scale = minOf((size.width - 2 * pad) / scene.bitmap.width, (size.height - 2 * pad) / scene.bitmap.height)
+        val dw = scene.bitmap.width * scale
+        val dh = scene.bitmap.height * scale
+        val start = Offset((size.width - dw) / 2f + before.tl.x * dw, (size.height - dh) / 2f + before.tl.y * dh)
+        editor.performTouchInput { swipe(start, start + Offset(150f, 200f), 600) }
+        compose.waitForIdle()
+        val after = firstDraft()!!.corners!!
+        val movedX = (after.tl.x - before.tl.x) * dw
+        val movedY = (after.tl.y - before.tl.y) * dh
+        assertTrue("corner moved by ($movedX, $movedY) of (150, 200)", movedX in 120f..155f && movedY in 160f..205f)
+        assertEquals(before.br, after.br)
         compose.onAllNodesWithText(str(R.string.next)).onFirst().performClick()
 
         compose.waitDescription(str(R.string.save))
@@ -237,6 +258,7 @@ class UiFlowTest {
         compose.onNodeWithText(str(R.string.filter_bw)).performClick()
         compose.waitUntil(10_000) { app.documents.documents.value.isEmpty() && filterOfDraft() == com.camscaner.app.scanner.ScanFilter.BW }
         Thread.sleep(1500)
+        waitUntilIdleProgress()
         shot("05_filter_bw")
         compose.onNodeWithContentDescription(str(R.string.save)).performClick()
 

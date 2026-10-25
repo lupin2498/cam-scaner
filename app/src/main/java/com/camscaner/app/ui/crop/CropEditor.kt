@@ -72,8 +72,12 @@ fun CropEditor(
                 .fillMaxSize()
                 .semantics { if (label != null) contentDescription = label }
                 .pointerInput(image, left, top, dw, dh) {
+                    // the outline being dragged, followed here rather than through recomposition:
+                    // several moves can arrive before the screen is composed again
+                    var dragged: Corners? = null
                     detectDragGestures(
                         onDragStart = { pos ->
+                            dragged = currentCorners
                             val pts = currentCorners.points.map(::toScreen)
                             var best = -1
                             var bestDistance = touchRadius
@@ -101,7 +105,7 @@ fun CropEditor(
                             if (index < 0) return@detectDragGestures
                             change.consume()
                             val delta = Pt(drag.x / dw, drag.y / dh)
-                            val c = currentCorners
+                            val c = dragged ?: currentCorners
                             val updated = if (index < 4) {
                                 c.with(index, (c.points[index] + delta).clamp())
                             } else {
@@ -110,10 +114,11 @@ fun CropEditor(
                                 val moved = c.with(i, (c.points[i] + delta).clamp())
                                 moved.with(j, (moved.points[j] + delta).clamp())
                             }
+                            dragged = updated
                             onChange(updated)
                         },
-                        onDragEnd = { active = -1 },
-                        onDragCancel = { active = -1 },
+                        onDragEnd = { active = -1; dragged = null },
+                        onDragCancel = { active = -1; dragged = null },
                     )
                 }
         ) {
