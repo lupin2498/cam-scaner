@@ -210,12 +210,19 @@ fun CropScreen(session: ScanSessionViewModel, onBack: () -> Unit, onNext: () -> 
 }
 
 @Composable
-internal fun ToolButton(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, tint: Color = Color.White, onClick: () -> Unit) {
+internal fun ToolButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    tint: Color = Color.White,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    val color = if (enabled) tint else tint.copy(alpha = 0.38f)
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onClick).padding(horizontal = 10.dp, vertical = 6.dp),
+        modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(enabled = enabled, onClick = onClick).padding(horizontal = 10.dp, vertical = 6.dp),
     ) {
-        Icon(icon, contentDescription = label, tint = tint)
-        Text(label, color = tint, style = MaterialTheme.typography.labelSmall)
+        Icon(icon, contentDescription = label, tint = color)
+        Text(label, color = color, style = MaterialTheme.typography.labelSmall)
     }
 }

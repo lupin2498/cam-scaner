@@ -3,9 +3,12 @@ package com.camscaner.app
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
 import android.graphics.LinearGradient
 import android.graphics.Matrix
 import android.graphics.Paint
+import android.graphics.RadialGradient
 import android.graphics.Shader
 import android.graphics.Typeface
 import androidx.test.platform.app.InstrumentationRegistry
@@ -76,6 +79,28 @@ object TestImages {
 
     /** The printed sheet itself, flat and level (as after perspective correction). */
     fun flatPage(width: Int = 1000, ratio: Double = 1 / sqrt(2.0)): Bitmap = paper(width, (width / ratio).toInt())
+
+    /**
+     * [page] lit by a warm lamp, with the soft shadow of a hand over its lower left: the paper is
+     * cream in the light and brown in the shadow, as in an indoor phone photo.
+     */
+    fun warmShadow(page: Bitmap): Bitmap {
+        val out = Bitmap.createBitmap(page.width, page.height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(out)
+        val warm = Paint().apply { colorFilter = ColorMatrixColorFilter(ColorMatrix().apply { setScale(1f, 0.86f, 0.7f, 1f) }) }
+        canvas.drawBitmap(page, 0f, 0f, warm)
+        val w = page.width.toFloat()
+        val h = page.height.toFloat()
+        val shade = Color.argb(95, 0, 0, 0)
+        val shadow = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            shader = RadialGradient(
+                w * 0.15f, h * 0.9f, w * 0.75f,
+                intArrayOf(shade, shade, Color.TRANSPARENT), floatArrayOf(0f, 0.55f, 1f), Shader.TileMode.CLAMP,
+            )
+        }
+        canvas.drawRect(0f, 0f, w, h, shadow)
+        return out
+    }
 
     /** [scene] photographed with the camera turned: the photo is rotated clockwise by [degrees]. */
     fun turned(scene: Scene, degrees: Int): Scene {

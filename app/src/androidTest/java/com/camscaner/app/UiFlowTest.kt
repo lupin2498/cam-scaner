@@ -26,7 +26,12 @@ import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.swipe
+import androidx.compose.ui.geometry.Offset
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -64,6 +69,7 @@ class UiFlowTest {
         app.documents.documents.value.forEach { app.documents.delete(it.id) }
         app.settings.batchMode = false
         app.settings.autoCapture = false
+        app.settings.defaultFilter = com.camscaner.app.scanner.ScanFilter.ENHANCE
     }
 
     @After
@@ -148,7 +154,7 @@ class UiFlowTest {
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         scenario = ActivityScenario.launch(intent)
 
-        compose.waitText(str(R.string.crop_auto), 30_000)
+        compose.waitDescription(str(R.string.crop_editor), 30_000)
         // the orientation is found in the background
         compose.waitUntil(60_000) { firstDraft()?.rotation == 180 }
         assertEquals(null, firstDraft()?.skew)
@@ -156,9 +162,9 @@ class UiFlowTest {
         compose.waitText(str(R.string.filter_original))
 
         // turn the page the wrong way, then let auto-align fix it again
-        compose.onNodeWithText(str(R.string.page_rotate)).performClick()
-        compose.waitUntil(5_000) { firstDraft()?.rotation == 270 }
-        compose.onNodeWithText(str(R.string.filter_straighten)).performClick()
+        compose.onNodeWithText(str(R.string.crop_rotate_left)).performClick()
+        compose.waitUntil(5_000) { firstDraft()?.rotation == 90 }
+        compose.onNodeWithText(str(R.string.filter_straighten)).performScrollTo().performClick()
         compose.waitText(str(R.string.filter_straighten_auto))
         waitUntilIdleProgress()
         shot("17_straighten")
@@ -195,7 +201,7 @@ class UiFlowTest {
         shot("02_settings")
         compose.onNodeWithText(str(R.string.filter_bw)).performClick()
         assertEquals(com.camscaner.app.scanner.ScanFilter.BW, app.settings.defaultFilter)
-        app.settings.defaultFilter = com.camscaner.app.scanner.ScanFilter.MAGIC
+        app.settings.defaultFilter = com.camscaner.app.scanner.ScanFilter.ENHANCE
     }
 
     /** Shared image → crop → filter → save → document → export PDF. */
@@ -211,15 +217,16 @@ class UiFlowTest {
         scenario = ActivityScenario.launch(intent)
 
         compose.waitText(str(R.string.crop_title))
-        compose.waitText(str(R.string.crop_auto))
+        compose.waitDescription(str(R.string.crop_editor))
         Thread.sleep(800)
         shot("03_crop")
         compose.onAllNodesWithText(str(R.string.next)).onFirst().performClick()
 
-        compose.waitText(str(R.string.filter_title))
+        compose.waitDescription(str(R.string.save))
         compose.waitText(str(R.string.filter_original))
         Thread.sleep(1500)
-        shot("04_filter_magic")
+        waitUntilIdleProgress()
+        shot("04_filter_enhance")
         // the filter strip scrolls horizontally; B&W is past the screen edge on a phone
         compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText(str(R.string.filter_bw)))
         compose.waitForIdle()
@@ -294,7 +301,7 @@ class UiFlowTest {
         Thread.sleep(1500)
         shot("12_camera")
         compose.onNodeWithContentDescription(str(R.string.camera_capture)).performClick()
-        compose.waitText(str(R.string.crop_auto), 30_000)
+        compose.waitDescription(str(R.string.crop_editor), 30_000)
         Thread.sleep(1000)
         shot("13_camera_crop")
         compose.onAllNodesWithText(str(R.string.next)).onFirst().performClick()
@@ -355,6 +362,14 @@ class UiFlowTest {
         compose.onNodeWithText(str(R.string.crop_full)).performClick()
         compose.onAllNodesWithText(str(R.string.next)).onFirst().performClick()
         compose.waitText(str(R.string.filter_original))
+        // the title is the document's name; renaming it here renames the document on saving
+        compose.waitText("Sua lai trang")
+        compose.onNodeWithContentDescription(str(R.string.filter_rename)).performClick()
+        compose.waitText(str(R.string.rename_title))
+        compose.onNode(hasSetTextAction()).performTextReplacement("Trang da sua")
+        compose.onNodeWithText(str(R.string.save)).performClick()
+        compose.waitText("Trang da sua")
+        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText(str(R.string.filter_gray)))
         compose.onNodeWithText(str(R.string.filter_gray)).performClick()
         Thread.sleep(1000)
         compose.onNodeWithContentDescription(str(R.string.save)).performClick()
@@ -364,6 +379,7 @@ class UiFlowTest {
         shot("15_after_recrop")
         val docs = app.documents.documents.value
         assertEquals(1, docs.size)
+        assertEquals("Trang da sua", docs[0].name)
         val after = docs[0].pages.single()
         assertEquals(before.id, after.id)
         assertEquals(null, after.corners)
@@ -386,6 +402,108 @@ class UiFlowTest {
         compose.waitUntil(10_000) { app.documents.get(docId)!!.pages.size == 1 }
     }
 
+    /** Filter screen tools: rename, compare, filter strength, pen, signature and text extraction. */
+    @Test
+    fun filterToolsMarkupSignatureAndText() {
+        val scene = TestImages.documentPhoto(rx = 0.1, ry = 0.05)
+        val file = TestImages.save(scene.bitmap, File(context.cacheDir, "exports/tools_test.jpg"))
+        val intent = Intent(context, MainActivity::class.java)
+            .setAction(Intent.ACTION_SEND)
+            .setType("image/jpeg")
+            .putExtra(Intent.EXTRA_STREAM, Share.uriFor(context, file))
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        scenario = ActivityScenario.launch(intent)
+
+        compose.waitDescription(str(R.string.crop_editor), 30_000)
+        compose.onAllNodesWithText(str(R.string.next)).onFirst().performClick()
+        compose.waitText(str(R.string.filter_original))
+        waitUntilIdleProgress()
+
+        // the title is the document name: a new scan gets the default one, tapping renames it
+        compose.waitText(str(R.string.default_doc_name, "").trim())
+        compose.onNodeWithContentDescription(str(R.string.filter_rename)).performClick()
+        compose.waitText(str(R.string.rename_title))
+        compose.onNode(hasSetTextAction()).performTextReplacement("Hop dong thue nha")
+        compose.onNodeWithText(str(R.string.save)).performClick()
+        compose.waitText("Hop dong thue nha")
+
+        // holding "compare" shows the page without its filter
+        compose.onNodeWithText(str(R.string.filter_compare)).performTouchInput { down(center) }
+        compose.waitDescription(str(R.string.filter_compare), 5_000)
+        shot("19_compare")
+        compose.onNodeWithText(str(R.string.filter_compare)).performTouchInput { up() }
+        compose.waitUntil(5_000) {
+            compose.onAllNodesWithContentDescription(str(R.string.filter_compare)).fetchSemanticsNodes().isEmpty()
+        }
+
+        // tapping the chosen filter again shows its strength
+        compose.onNodeWithText(str(R.string.filter_enhance)).performClick()
+        compose.waitText(str(R.string.filter_strength))
+        compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.SetProgress)).performSemanticsAction(SemanticsActions.SetProgress) { it(0.5f) }
+        compose.waitUntil(5_000) { firstDraft()?.adjustments?.strength == 0.5f }
+        Thread.sleep(300)
+        waitUntilIdleProgress()
+        shot("20_strength")
+
+        // a pen stroke across the top of the page
+        compose.onNodeWithText(str(R.string.filter_markup)).performScrollTo().performClick()
+        compose.waitDescription(str(R.string.markup_hint))
+        compose.onNodeWithContentDescription(str(R.string.markup_hint)).performTouchInput {
+            swipe(Offset(width * 0.3f, height * 0.3f), Offset(width * 0.7f, height * 0.33f), 400)
+        }
+        compose.waitForIdle()
+        shot("21_markup")
+        compose.onNodeWithContentDescription(str(R.string.done)).performClick()
+        compose.waitUntil(5_000) { firstDraft()?.marks?.size == 1 }
+
+        // a signature: drawn on the pad (two strokes), then placed on the page
+        compose.onNodeWithText(str(R.string.filter_sign)).performScrollTo().performClick()
+        compose.waitDescription(str(R.string.sign_pad_title))
+        compose.onNodeWithContentDescription(str(R.string.sign_pad_title)).performTouchInput {
+            swipe(Offset(width * 0.2f, height * 0.6f), Offset(width * 0.5f, height * 0.3f), 300)
+            swipe(Offset(width * 0.5f, height * 0.3f), Offset(width * 0.8f, height * 0.65f), 300)
+        }
+        compose.waitForIdle()
+        shot("22_signature_pad")
+        compose.onNodeWithText(str(R.string.sign_place)).performClick()
+        compose.waitText(str(R.string.sign_hint))
+        compose.waitForIdle()
+        shot("23_signature_place")
+        compose.onNodeWithContentDescription(str(R.string.done)).performClick()
+        compose.waitUntil(5_000) { firstDraft()?.marks?.size == 3 }
+        val marks = firstDraft()!!.marks
+        assertEquals(0, marks[0].group)
+        assertTrue("signature strokes not grouped: ${marks.map { it.group }}", marks.drop(1).all { it.group == 1 })
+
+        // the text of the page, ready to copy or share
+        compose.onNodeWithText(str(R.string.filter_extract_text)).performScrollTo().performClick()
+        compose.waitText("12345", 60_000)
+        shot("24_extract_text")
+        compose.onNodeWithText(str(R.string.close)).performClick()
+
+        Thread.sleep(300)
+        waitUntilIdleProgress()
+        shot("25_filter_marked")
+        compose.onNodeWithContentDescription(str(R.string.save)).performClick()
+        compose.waitText(str(R.string.doc_export_pdf), 60_000)
+        val doc = app.documents.documents.value.single()
+        assertEquals("Hop dong thue nha", doc.name)
+        val page = doc.pages.single()
+        assertEquals(3, page.marks.size)
+        assertEquals(0.5f, page.adjustments.strength)
+        // the red pen stroke is part of the saved page image
+        val saved = android.graphics.BitmapFactory.decodeFile(app.documents.pageFile(doc.id, page.id).absolutePath)
+        val stroke = page.marks[0]
+        val n = stroke.points.size / 2
+        val red = (0 until n).count { i ->
+            val x = (stroke.points[2 * i] * (saved.width - 1)).toInt()
+            val y = (stroke.points[2 * i + 1] * (saved.height - 1)).toInt()
+            val px = saved.getPixel(x, y)
+            android.graphics.Color.red(px) > 170 && android.graphics.Color.green(px) < 110
+        }
+        assertTrue("red ink at $red of $n stroke points", red > n / 2)
+    }
+
     /** "Add with camera" from a document appends the capture to that document. */
     @Test
     fun addPageWithCameraToExistingDocument() {
@@ -397,7 +515,7 @@ class UiFlowTest {
         compose.onNodeWithText(str(R.string.doc_add_camera)).performClick()
         waitShutterReady()
         compose.onNodeWithContentDescription(str(R.string.camera_capture)).performClick()
-        compose.waitText(str(R.string.crop_auto), 30_000)
+        compose.waitDescription(str(R.string.crop_editor), 30_000)
         compose.onAllNodesWithText(str(R.string.next)).onFirst().performClick()
         compose.waitDescription(str(R.string.save))
         Thread.sleep(1000)

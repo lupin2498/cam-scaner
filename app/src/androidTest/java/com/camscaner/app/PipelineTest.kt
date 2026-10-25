@@ -5,8 +5,10 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.camscaner.app.scanner.Adjustments
 import com.camscaner.app.scanner.DocumentDetector
 import com.camscaner.app.ocr.AutoAligner
+import com.camscaner.app.data.ScanPage
 import com.camscaner.app.scanner.ImageEnhancer
 import com.camscaner.app.scanner.ImageIO
+import com.camscaner.app.scanner.MarkStroke
 import com.camscaner.app.scanner.PageAligner
 import com.camscaner.app.scanner.PageProcessor
 import com.camscaner.app.scanner.ScanFilter
@@ -132,6 +134,80 @@ class PipelineTest {
         // the red block stays red
         val red = out.getPixel((out.width * 0.7).toInt(), (out.height * 0.36).toInt())
         assertTrue("red block lost: ${Integer.toHexString(red)}", Color.red(red) > 150 && Color.green(red) < 110)
+    }
+
+    @Test
+    fun enhanceWhitensWarmShadowedPaperAndKeepsColor() {
+        val shaded = TestImages.warmShadow(TestImages.flatPage())
+        val out = ImageEnhancer.enhance(shaded, ScanFilter.ENHANCE)
+        // blank paper in the lamp light and deep in the hand's shadow
+        for ((fx, fy) in listOf(0.03 to 0.05, 0.97 to 0.5, 0.03 to 0.97, 0.5 to 0.985)) {
+            val px = out.getPixel((out.width * fx).toInt(), (out.height * fy).toInt())
+            assertTrue(
+                "paper at ($fx, $fy) not white: ${Integer.toHexString(px)}",
+                Color.red(px) > 230 && Color.green(px) > 230 && Color.blue(px) > 230,
+            )
+        }
+        val red = out.getPixel((out.width * 0.7).toInt(), (out.height * 0.36).toInt())
+        assertTrue("red block lost: ${Integer.toHexString(red)}", Color.red(red) > 150 && Color.green(red) < 110 && Color.blue(red) < 110)
+        // the title stays black
+        val dark = darkest(out, 0.08, 0.06, 0.6, 0.1)
+        assertTrue("text washed out: $dark", dark < 60)
+    }
+
+    /** Lowest red value in a region given in fractions of the image (the darkest ink there). */
+    private fun darkest(bmp: android.graphics.Bitmap, x0: Double, y0: Double, x1: Double, y1: Double): Int {
+        var min = 255
+        for (y in (bmp.height * y0).toInt() until (bmp.height * y1).toInt()) {
+            for (x in (bmp.width * x0).toInt() until (bmp.width * x1).toInt()) min = minOf(min, Color.red(bmp.getPixel(x, y)))
+        }
+        return min
+    }
+
+    @Test
+    fun strengthBlendsFilterWithThePage() {
+        val shaded = TestImages.warmShadow(TestImages.flatPage())
+        val x = (shaded.width * 0.03).toInt()
+        val y = (shaded.height * 0.97).toInt()
+        val before = Color.green(shaded.getPixel(x, y))
+        val full = Color.green(ImageEnhancer.enhance(shaded, ScanFilter.ENHANCE).getPixel(x, y))
+        val none = Color.green(ImageEnhancer.enhance(shaded, ScanFilter.ENHANCE, Adjustments(strength = 0f)).getPixel(x, y))
+        val half = Color.green(ImageEnhancer.enhance(shaded, ScanFilter.ENHANCE, Adjustments(strength = 0.5f)).getPixel(x, y))
+        assertEquals(before.toDouble(), none.toDouble(), 2.0)
+        assertEquals((before + full) / 2.0, half.toDouble(), 3.0)
+        assertTrue("filter has no effect: $before -> $full", full - before > 60)
+    }
+
+    @Test
+    fun marksAreDrawnOnTheFinishedPage() {
+        val page = TestImages.flatPage()
+        val pen = MarkStroke(listOf(0.1f, 0.5f, 0.9f, 0.5f), Color.rgb(229, 57, 53), 0.01f)
+        val marker = MarkStroke(listOf(0.05f, 0.08f, 0.95f, 0.08f), Color.rgb(255, 235, 59), 0.05f, highlighter = true)
+        // marks are placed on the page as it comes out, after turning it
+        val out = PageProcessor.render(page, null, 90, ScanFilter.ORIGINAL, Adjustments(), 2000, marks = listOf(pen, marker))
+        assertEquals(page.height, out.width)
+        val ink = out.getPixel(out.width / 2, out.height / 2)
+        assertTrue("pen ink missing: ${Integer.toHexString(ink)}", Color.red(ink) > 180 && Color.green(ink) < 110)
+        // highlighter tints the paper but never hides what is under it
+        val tinted = out.getPixel(out.width / 2, (out.height * 0.06).toInt())
+        assertTrue("highlighter missing: ${Integer.toHexString(tinted)}", Color.red(tinted) > 200 && Color.blue(tinted) < 200)
+    }
+
+    @Test
+    fun marksAndStrengthSurviveStorage() {
+        val page = ScanPage(
+            id = "p",
+            corners = null,
+            adjustments = Adjustments(strength = 0.6f),
+            marks = listOf(
+                MarkStroke(listOf(0.1f, 0.2f, 0.3f, 0.4f), Color.BLUE, 0.004f, group = 2),
+                MarkStroke(listOf(0.5f, 0.6f), Color.YELLOW, 0.02f, highlighter = true),
+            ),
+        )
+        val back = ScanPage.fromJson(org.json.JSONObject(page.toJson().toString()))
+        assertEquals(page.marks, back.marks)
+        assertEquals(0.6f, back.adjustments.strength)
+        assertEquals(1f, ScanPage.fromJson(ScanPage("q", null).toJson()).adjustments.strength)
     }
 
     @Test

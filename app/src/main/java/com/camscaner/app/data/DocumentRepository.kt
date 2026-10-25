@@ -63,13 +63,15 @@ class DocumentRepository(context: Context) {
     fun thumbFile(docId: String, pageId: String) = File(pageDir(docId, pageId), "thumb.jpg")
 
     /**
-     * Renders and stores [drafts] into document [docId] (a new document named [newName] when null).
+     * Renders and stores [drafts] into document [docId] (a new document named [newName] when null);
+     * a non-blank [rename] also renames an existing document.
      * Drafts with [DraftPage.existingPageId] replace that page, the others are appended.
      */
     suspend fun saveDrafts(
         docId: String?,
         newName: String,
         drafts: List<DraftPage>,
+        rename: String? = null,
         onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
     ): String = withContext(Dispatchers.Default) {
         val id = docId ?: newId()
@@ -105,7 +107,8 @@ class DocumentRepository(context: Context) {
                 val byId = rendered.associateBy { it.id }
                 val kept = existing.pages.map { byId[it.id] ?: it }
                 val added = rendered.filter { r -> existing.pages.none { it.id == r.id } }
-                existing.copy(pages = kept + added, updatedAt = now)
+                val name = rename?.trim().orEmpty().ifEmpty { existing.name }
+                existing.copy(name = name, pages = kept + added, updatedAt = now)
             }
             persist(doc)
         }

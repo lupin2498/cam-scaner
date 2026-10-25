@@ -15,19 +15,21 @@ import kotlin.math.sqrt
 /**
  * A pen, highlighter or signature stroke drawn on the finished page. [points] are x, y pairs
  * normalized to the page; [width] is relative to sqrt(page width × height), so it survives
- * quarter turns.
+ * quarter turns. Strokes placed together (a signature) share a [group] above 0.
  */
 data class MarkStroke(
     val points: List<Float>,
     val color: Int,
     val width: Float,
     val highlighter: Boolean = false,
+    val group: Int = 0,
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("p", JSONArray().apply { points.forEach { put(it.toDouble()) } })
         put("c", color)
         put("w", width.toDouble())
         if (highlighter) put("h", true)
+        if (group != 0) put("g", group)
     }
 
     /** The stroke on the page turned clockwise by [degrees] (a multiple of 90). */
@@ -55,8 +57,18 @@ data class MarkStroke(
                 color = o.optInt("c"),
                 width = o.optDouble("w", 0.004).toFloat(),
                 highlighter = o.optBoolean("h", false),
+                group = o.optInt("g", 0),
             )
         }
+
+        /** [marks] without the last thing drawn: its last stroke, or the whole group (signature) it belongs to. */
+        fun undo(marks: List<MarkStroke>): List<MarkStroke> {
+            val last = marks.lastOrNull() ?: return marks
+            return if (last.group == 0) marks.dropLast(1) else marks.dropLastWhile { it.group == last.group }
+        }
+
+        /** A group number not used by any of [marks]. */
+        fun nextGroup(marks: List<MarkStroke>): Int = (marks.maxOfOrNull { it.group } ?: 0) + 1
 
         fun listToJson(marks: List<MarkStroke>) = JSONArray().apply { marks.forEach { put(it.toJson()) } }
 

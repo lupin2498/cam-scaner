@@ -80,6 +80,21 @@ class ScanSessionViewModel(app: Application, private val state: SavedStateHandle
     var cropReady by mutableStateOf(false)
         private set
 
+    /** Name a new document gets unless the user types one; fixed when the scan starts. */
+    private var defaultName by mutableStateOf(Share.defaultDocumentName(app))
+
+    /** Name typed for the document during this scan; null keeps its current (or default) name. */
+    var customName by mutableStateOf<String?>(null)
+        private set
+
+    /** Name shown for the document being scanned into, and saved with it. */
+    val documentName: String
+        get() = customName ?: targetDocId?.let { repository.get(it)?.name } ?: defaultName
+
+    fun rename(name: String) {
+        customName = name.trim().ifEmpty { null }
+    }
+
     /**
      * Bumped when the scan is restarted or abandoned. Photo processing and imports outlive the
      * screens that started them, so they check it before adding pages to a scan that is gone.
@@ -96,6 +111,8 @@ class ScanSessionViewModel(app: Application, private val state: SavedStateHandle
         cropReady = false
         targetDocId = docId
         this.returnRoute = returnRoute
+        defaultName = Share.defaultDocumentName(scannerApp)
+        customName = null
     }
 
     /** The user left the scan (camera closed): drop its pages and any photo still in progress. */
@@ -227,8 +244,12 @@ class ScanSessionViewModel(app: Application, private val state: SavedStateHandle
     }
 
     /** Turns page [index] by [delta] degrees clockwise (a multiple of 90), its annotations with it. */
-    fun rotate(index: Int, delta: Int) = update(index) { p ->
-        p.copy(rotation = ((p.rotation + delta) % 360 + 360) % 360, marks = p.marks.map { it.rotated(delta) })
+    fun rotate(index: Int, delta: Int) = update(index) { it.turnedTo(it.rotation + delta) }
+
+    /** This page with [rotation] (any multiple of 90); its annotations turn along. */
+    private fun DraftPage.turnedTo(rotation: Int): DraftPage {
+        val r = (rotation % 360 + 360) % 360
+        return if (r == this.rotation) this else copy(rotation = r, marks = marks.map { it.rotated(r - this.rotation) })
     }
 
     fun remove(index: Int) {
@@ -259,7 +280,7 @@ class ScanSessionViewModel(app: Application, private val state: SavedStateHandle
                 } ?: return@launch
                 val i = pages.indexOfFirst { it.id == draft.id }
                 if (gen == generation && i >= 0 && pages[i].rotation == draft.rotation) {
-                    update(i) { it.copy(rotation = rotation) }
+                    update(i) { it.turnedTo(rotation) }
                 }
             } finally {
                 alignJobs.remove(draft.id)
@@ -279,7 +300,7 @@ class ScanSessionViewModel(app: Application, private val state: SavedStateHandle
         // pages may have been removed, reordered or edited meanwhile; edits win
         val now = pages.indexOfFirst { it.id == page.id }
         if (now >= 0 && pages[now].rotation == page.rotation && pages[now].skew == page.skew) {
-            update(now) { it.copy(rotation = alignment?.rotation ?: it.rotation, skew = null) }
+            update(now) { it.turnedTo(alignment?.rotation ?: it.rotation).copy(skew = null) }
         }
         return alignment?.rotation != null
     }
@@ -295,10 +316,11 @@ class ScanSessionViewModel(app: Application, private val state: SavedStateHandle
     }
 
     /**
-     * Renders all pages into the target document. Runs in the ViewModel so leaving or recreating
-     * the screen cannot interrupt it half-way; the result arrives in [savedDocId] or [saveError].
+     * Renders all pages into the target document under [documentName]. Runs in the ViewModel so
+     * leaving or recreating the screen cannot interrupt it half-way; the result arrives in
+     * [savedDocId] or [saveError].
      */
-    fun save(newName: String) {
+    fun save() {
         if (saving || pages.isEmpty()) return
         saving = true
         saveError = null
@@ -308,7 +330,7 @@ class ScanSessionViewModel(app: Application, private val state: SavedStateHandle
                 // pages still being aligned are saved the right way up
                 alignJobs.values.toList().joinAll()
                 val drafts = pages.toList()
-                val id = repository.saveDrafts(targetDocId, newName, drafts) { done, total ->
+                val id = repository.saveDrafts(targetDocId, documentName, drafts, rename = customName) { done, total ->
                     saveProgress = done to total
                 }
                 clear()

@@ -31,6 +31,29 @@ class GeometryTest {
     }
 
     @Test
+    fun rotatedCornersFollowTheTurnedPhoto() {
+        val c = Corners(Pt(0.1f, 0.2f), Pt(0.8f, 0.15f), Pt(0.9f, 0.85f), Pt(0.05f, 0.9f))
+        // a quarter turn clockwise brings the photo's left edge to the top
+        assertPt(Pt(0.8f, 0.1f), c.rotated(90).tl)
+        assertPt(Pt(0.95f, 0.1f), c.rotated(180).bl)
+        assertPt(Pt(0.15f, 0.2f), c.rotated(270).tr)
+        assertEquals(c, c.rotated(0))
+        assertEquals(c, c.rotated(360))
+        // the opposite turn maps them back, also for angles given outside 0..359
+        for (turn in listOf(90, 180, 270, -90, 450)) {
+            val back = c.rotated(turn).rotated(-turn)
+            c.points.zip(back.points).forEach { (a, b) -> assertPt(a, b) }
+        }
+        // a turned page outline is still a valid quadrilateral
+        assertTrue(c.rotated(90).isValid())
+    }
+
+    private fun assertPt(expected: Pt, actual: Pt) {
+        assertEquals(expected.x, actual.x, 1e-6f)
+        assertEquals(expected.y, actual.y, 1e-6f)
+    }
+
+    @Test
     fun areaOfUnitSquare() {
         assertEquals(1f, Corners.FULL.area(), 1e-6f)
     }
