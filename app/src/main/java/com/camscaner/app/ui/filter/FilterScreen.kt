@@ -450,7 +450,8 @@ private fun FilterThumb(label: String, thumb: ImageBitmap?, isSelected: Boolean,
     val shape = RoundedCornerShape(8.dp)
     Box(
         Modifier
-            .size(76.dp, 96.dp)
+            // wide enough for the longest name, "Không có bóng", on one line
+            .size(82.dp, 100.dp)
             .clip(shape)
             .background(Color(0xFF2A302E))
             .border(if (isSelected) 2.5.dp else 0.dp, if (isSelected) accent else Color.Transparent, shape)
