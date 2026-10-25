@@ -65,9 +65,9 @@ object Share {
         out.use { o -> file.inputStream().use { it.copyTo(o) } }
     }
 
-    /** "Scan 2026-10-21 17.45" style default name. */
+    /** "CamScaner 25-10-2026 18.38" style default name. */
     fun defaultDocumentName(context: Context): String =
-        context.getString(R.string.default_doc_name, SimpleDateFormat("yyyy-MM-dd HH.mm", Locale.getDefault()).format(Date()))
+        context.getString(R.string.default_doc_name, SimpleDateFormat("dd-MM-yyyy HH.mm", Locale.getDefault()).format(Date()))
 
     fun safeFileName(name: String): String =
         name.replace(Regex("[\\\\/:*?\"<>|\\n\\r\\t]"), "_").trim().ifEmpty { "scan" }.take(80)

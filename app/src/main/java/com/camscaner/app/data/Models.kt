@@ -2,6 +2,7 @@ package com.camscaner.app.data
 
 import com.camscaner.app.scanner.Adjustments
 import com.camscaner.app.scanner.Corners
+import com.camscaner.app.scanner.MarkStroke
 import com.camscaner.app.scanner.ScanFilter
 import org.json.JSONArray
 import org.json.JSONObject
@@ -16,6 +17,8 @@ data class ScanPage(
     val adjustments: Adjustments = Adjustments(),
     /** Clockwise straightening in degrees after perspective correction; null measures it automatically. */
     val skew: Float? = 0f,
+    /** Annotations and signatures drawn on the finished page. */
+    val marks: List<MarkStroke> = emptyList(),
     /** Size of the rendered page image in pixels. */
     val width: Int = 0,
     val height: Int = 0,
@@ -29,6 +32,8 @@ data class ScanPage(
         put("brightness", adjustments.brightness.toDouble())
         put("contrast", adjustments.contrast.toDouble())
         put("sharpness", adjustments.sharpness.toDouble())
+        if (adjustments.strength != 1f) put("strength", adjustments.strength.toDouble())
+        if (marks.isNotEmpty()) put("marks", MarkStroke.listToJson(marks))
         if (skew == null) put("skewAuto", true) else put("skew", skew.toDouble())
         put("width", width)
         put("height", height)
@@ -49,7 +54,9 @@ data class ScanPage(
                     brightness = o.optDouble("brightness", 0.0).toFloat(),
                     contrast = o.optDouble("contrast", 0.0).toFloat(),
                     sharpness = o.optDouble("sharpness", 0.0).toFloat(),
+                    strength = o.optDouble("strength", 1.0).toFloat(),
                 ),
+                marks = MarkStroke.listFromJson(o.optJSONArray("marks")),
                 // pages saved before straightening existed keep their look
                 skew = if (o.optBoolean("skewAuto", false)) null else o.optDouble("skew", 0.0).toFloat(),
                 width = o.optInt("width", 0),
@@ -100,10 +107,12 @@ data class DraftPage(
     val detected: Corners?,
     val corners: Corners?,
     val rotation: Int = 0,
-    val filter: ScanFilter = ScanFilter.MAGIC,
+    val filter: ScanFilter = ScanFilter.ENHANCE,
     val adjustments: Adjustments = Adjustments(),
     /** Clockwise straightening in degrees; null measures it automatically from the text lines. */
     val skew: Float? = null,
+    /** Annotations and signatures drawn on the finished page. */
+    val marks: List<MarkStroke> = emptyList(),
     /** Set when re-editing a page that already belongs to a document. */
     val existingPageId: String? = null,
 )

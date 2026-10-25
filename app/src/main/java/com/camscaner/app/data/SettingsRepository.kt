@@ -17,7 +17,7 @@ class SettingsRepository(context: Context) {
 
     private val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
-    private var _defaultFilter by mutableStateOf(ScanFilter.fromKey(prefs.getString(KEY_FILTER, ScanFilter.MAGIC.key)))
+    private var _defaultFilter by mutableStateOf(ScanFilter.fromKey(prefs.getString(KEY_FILTER, ScanFilter.ENHANCE.key)))
     var defaultFilter: ScanFilter
         get() = _defaultFilter
         set(value) {

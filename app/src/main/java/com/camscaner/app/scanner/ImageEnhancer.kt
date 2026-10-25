@@ -31,6 +31,7 @@ object ImageEnhancer {
         var out = when (filter) {
             ScanFilter.ORIGINAL -> rgb
             ScanFilter.LIGHTEN -> lighten(rgb)
+            ScanFilter.ENHANCE -> enhanceDocument(rgb)
             ScanFilter.MAGIC -> magicColor(rgb)
             ScanFilter.NO_SHADOW -> noShadow(rgb)
             ScanFilter.GRAY -> grayscale(rgb)
@@ -38,6 +39,8 @@ object ImageEnhancer {
             ScanFilter.BW_SOFT -> photocopy(rgb)
         }
         if (filter != ScanFilter.BW) out = adjust(out, adjustments)
+        val strength = adjustments.strength.coerceIn(0f, 1f)
+        if (strength < 0.999f && filter != ScanFilter.ORIGINAL) out = blend(rgb, out, strength.toDouble())
         val result = Bitmap.createBitmap(out.cols(), out.rows(), Bitmap.Config.ARGB_8888)
         Utils.matToBitmap(out, result)
         result
@@ -49,6 +52,24 @@ object ImageEnhancer {
         Core.merge(channels, merged)
         Core.LUT(merged, gammaLut(0.85), merged)
         return sharpen(merged, 0.3, 1.0)
+    }
+
+    /** Mixes the filter result into the unfiltered page: [strength] 1 is the plain filter. */
+    private fun MatScope.blend(rgb: Mat, filtered: Mat, strength: Double): Mat {
+        val color = if (filtered.channels() == 1) mat().also { Imgproc.cvtColor(filtered, it, Imgproc.COLOR_GRAY2RGB) } else filtered
+        val out = mat()
+        Core.addWeighted(color, strength, rgb, 1.0 - strength, 0.0, out)
+        return out
+    }
+
+    /**
+     * The scanner look: paper turned uniformly white (shadows and the colour of the light removed),
+     * text darkened and crisp, colours kept as they are.
+     */
+    private fun MatScope.enhanceDocument(rgb: Mat): Mat {
+        val flat = flatten(rgb)
+        Core.LUT(flat, levelsLut(8.0, 232.0, 1.35), flat)
+        return sharpen(flat, 0.6, 1.0)
     }
 
     private fun MatScope.magicColor(rgb: Mat): Mat {
@@ -131,8 +152,9 @@ object ImageEnhancer {
 
     /**
      * Per-channel illumination map at full resolution (8-bit). A local estimate (closing + median,
-     * removes text) is trusted where it looks like paper — neutral and not too dark relative to a
-     * smooth surface fit; elsewhere (colored blocks, photos) the smooth fit is used instead.
+     * removes text) is trusted where it looks like paper — the sheet's own colour, not too dark
+     * relative to a smooth surface fit, and without a photo's structure — so shadows and the tint
+     * of the light disappear; elsewhere (coloured blocks, photos) the smooth fit is used instead.
      */
     private fun MatScope.backgroundModel(rgb: Mat): List<Mat> {
         val w = rgb.cols()
@@ -171,28 +193,59 @@ object ImageEnhancer {
         }
 
         val lMax = mat(); Core.max(local[0], local[1], lMax); Core.max(lMax, local[2], lMax)
-        val lMin = mat(); Core.min(local[0], local[1], lMin); Core.min(lMin, local[2], lMin)
         val sMax = mat(); Core.max(smooth[0], smooth[1], sMax); Core.max(sMax, smooth[2], sMax)
 
-        // saturation of the local background: (max - min) / max
-        val sat = mat()
-        Core.subtract(lMax, lMin, sat)
-        val denom = mat()
-        Core.max(lMax, Scalar(1.0), denom)
-        Core.divide(sat, denom, sat)
-        // brightness relative to the smooth paper model
+        // Paper is recognised by its own colour, measured on the brightest third of the sheet:
+        // under room light it is warm or bluish, and a shadow darkens it without changing that
+        // colour much, while coloured blocks and stamps have a colour of their own.
+        val sum = mat()
+        Core.add(local[0], local[1], sum)
+        Core.add(sum, local[2], sum)
+        Core.add(sum, Scalar(1e-3), sum)
+        val chroma = local.map { l -> mat().also { Core.divide(l, sum, it) } }
+        val paper = paperChroma(lMax, chroma)
+        val dist = Mat.zeros(sh, sw, CvType.CV_32F).track()
+        for (i in 0..2) {
+            val d = mat()
+            Core.subtract(chroma[i], Scalar(paper[i]), d)
+            Core.multiply(d, d, d)
+            Core.add(dist, d, dist)
+        }
+        Core.sqrt(dist, dist)
+        val paperLike = mat()
+        dist.convertTo(paperLike, -1, -1.0 / 0.035, 0.07 / 0.035) // (0.07 - dist) / 0.035
+        clamp01(paperLike)
+
+        // brightness relative to the smooth paper model: very dark areas are content, not shadow
         val ratio = mat()
+        val denom = mat()
         Core.max(sMax, Scalar(1.0), denom)
         Core.divide(lMax, denom, ratio)
-
-        val neutral = mat()
-        sat.convertTo(neutral, -1, -10.0, 2.0) // (0.2 - sat) / 0.1
-        clamp01(neutral)
         val bright = mat()
-        ratio.convertTo(bright, -1, 10.0, -3.0) // (ratio - 0.3) / 0.1
+        ratio.convertTo(bright, -1, 10.0, -4.2) // (ratio - 0.42) / 0.1
         clamp01(bright)
+
+        // Photos keep their own structure in the background estimate; paper is smooth there,
+        // also under a shadow, apart from the shadow's soft outline.
+        val bgray = mat()
+        Core.addWeighted(local[0], 0.299, local[1], 0.587, 0.0, bgray)
+        Core.addWeighted(bgray, 1.0, local[2], 0.114, 0.0, bgray)
+        val lap = mat()
+        val soft = mat()
+        Imgproc.GaussianBlur(bgray, soft, Size(0.0, 0.0), 2.0)
+        Imgproc.Laplacian(soft, lap, CvType.CV_32F, 3)
+        Core.absdiff(lap, Scalar(0.0), lap)
+        val win = odd(max(15, longSide / 8)).toDouble()
+        Imgproc.blur(lap, lap, Size(win, win))
+        Core.max(bgray, Scalar(1.0), denom)
+        Core.divide(lap, denom, lap, 100.0)
+        val smoothPaper = mat()
+        lap.convertTo(smoothPaper, -1, -1.0, 2.0) // (2 - texture) / 1
+        clamp01(smoothPaper)
+
         val weight = mat()
-        Core.multiply(neutral, bright, weight)
+        Core.multiply(paperLike, bright, weight)
+        Core.multiply(weight, smoothPaper, weight)
         Imgproc.GaussianBlur(weight, weight, Size(0.0, 0.0), 2.0)
 
         return local.indices.map { i ->
@@ -213,6 +266,31 @@ object ImageEnhancer {
             Imgproc.resize(b8, full, Size(w.toDouble(), h.toDouble()), 0.0, 0.0, Imgproc.INTER_LINEAR)
             full
         }
+    }
+
+    /** Median normalized colour of the background where it is brightest (the lit paper). */
+    private fun paperChroma(lMax: Mat, chroma: List<Mat>): DoubleArray {
+        val n = lMax.rows() * lMax.cols()
+        val brightness = FloatArray(n)
+        lMax.get(0, 0, brightness)
+        val threshold = brightness.copyOf().also { it.sort() }[(n * 2) / 3]
+        return DoubleArray(3) { c ->
+            val values = FloatArray(n)
+            chroma[c].get(0, 0, values)
+            val picked = ArrayList<Float>(n / 3 + 1)
+            for (i in 0 until n) if (brightness[i] >= threshold) picked += values[i]
+            if (picked.isEmpty()) 1.0 / 3 else picked.sorted()[picked.size / 2].toDouble()
+        }
+    }
+
+    /** Maps [black]..[white] to the full range, then applies [gamma] (> 1 darkens mid-tones). */
+    private fun MatScope.levelsLut(black: Double, white: Double, gamma: Double): Mat {
+        val lut = Mat(1, 256, CvType.CV_8UC1).track()
+        lut.put(0, 0, ByteArray(256) { i ->
+            val v = ((i - black) / max(1.0, white - black)).coerceIn(0.0, 1.0).pow(gamma)
+            (255.0 * v).roundToInt().coerceIn(0, 255).toByte()
+        })
+        return lut
     }
 
     private fun MatScope.adjust(src: Mat, a: Adjustments): Mat {

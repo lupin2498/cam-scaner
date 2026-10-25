@@ -173,6 +173,21 @@ private fun angleBetween(a1: Pt, a2: Pt, b1: Pt, b2: Pt): Double {
     return Math.toDegrees(acos(cos))
 }
 
+/**
+ * These normalized corners as seen on the photo turned clockwise by [degrees] (a multiple of 90).
+ * Each corner keeps its role, so the result maps back with the opposite turn.
+ */
+fun Corners.rotated(degrees: Int): Corners {
+    val turn = ((degrees % 360) + 360) % 360
+    fun map(p: Pt) = when (turn) {
+        90 -> Pt(1f - p.y, p.x)
+        180 -> Pt(1f - p.x, 1f - p.y)
+        270 -> Pt(p.y, 1f - p.x)
+        else -> p
+    }
+    return Corners(map(tl), map(tr), map(br), map(bl))
+}
+
 /** Output size (width, height) in pixels for a perspective-corrected page with the given real ratio. */
 fun correctedSize(c: Corners, ratio: Double, maxDim: Int): Pair<Int, Int> {
     val visW = max(c.tl.distanceTo(c.tr), c.bl.distanceTo(c.br)).toDouble()

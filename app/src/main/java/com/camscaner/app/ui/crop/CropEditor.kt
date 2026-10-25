@@ -12,6 +12,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
@@ -20,19 +21,24 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.camscaner.app.scanner.Corners
 import com.camscaner.app.scanner.Pt
+import kotlin.math.atan2
 import kotlin.math.min
 import kotlin.math.roundToInt
 
 /**
- * Shows [image] with the document outline. Corners and edge midpoints can be dragged;
- * a magnifier shows the area under the finger while moving a corner.
+ * Shows [image] with the document outline. Corners (round handles) and edges (pill handles along
+ * each side) can be dragged; a magnifier shows the area under the finger while moving a corner.
+ * [label] describes the editor for accessibility.
  */
 @Composable
 fun CropEditor(
@@ -40,6 +46,7 @@ fun CropEditor(
     corners: Corners,
     onCornersChange: (Corners) -> Unit,
     modifier: Modifier = Modifier,
+    label: String? = null,
 ) {
     val density = LocalDensity.current
     val primary = MaterialTheme.colorScheme.primary
@@ -63,6 +70,7 @@ fun CropEditor(
         Canvas(
             Modifier
                 .fillMaxSize()
+                .semantics { if (label != null) contentDescription = label }
                 .pointerInput(image, left, top, dw, dh) {
                     detectDragGestures(
                         onDragStart = { pos ->
@@ -125,19 +133,30 @@ fun CropEditor(
                 addRect(Rect(left, top, left + dw, top + dh))
                 addPath(quad)
             }
-            drawPath(outside, Color.Black.copy(alpha = 0.5f))
+            drawPath(outside, Color.Black.copy(alpha = 0.3f))
             val lineColor = if (corners.isValid()) primary else Color(0xFFE53935)
             drawPath(quad, lineColor, style = Stroke(width = 2.5.dp.toPx()))
 
-            val edgeRadius = 7.dp.toPx()
+            // edge handles: white pills lying along each side
+            val pillLength = 26.dp.toPx()
+            val pillThickness = 10.dp.toPx()
             for (i in 0 until 4) {
-                val mid = (pts[i] + pts[(i + 1) % 4]) / 2f
-                drawCircle(Color.White, edgeRadius, mid)
-                drawCircle(lineColor, edgeRadius, mid, style = Stroke(2.dp.toPx()))
+                val a = pts[i]
+                val b = pts[(i + 1) % 4]
+                val mid = (a + b) / 2f
+                val angle = Math.toDegrees(atan2((b.y - a.y).toDouble(), (b.x - a.x).toDouble())).toFloat()
+                rotate(angle, pivot = mid) {
+                    val topLeft = Offset(mid.x - pillLength / 2f, mid.y - pillThickness / 2f)
+                    val pill = androidx.compose.ui.geometry.Size(pillLength, pillThickness)
+                    val radius = CornerRadius(pillThickness / 2f)
+                    drawRoundRect(if (i + 4 == active) lineColor.copy(alpha = 0.4f) else Color.White, topLeft, pill, radius)
+                    drawRoundRect(lineColor, topLeft, pill, radius, style = Stroke(2.dp.toPx()))
+                }
             }
-            val cornerRadius = 13.dp.toPx()
+            // corner handles: white discs with a coloured ring
+            val cornerRadius = 11.dp.toPx()
             pts.forEachIndexed { i, p ->
-                drawCircle(Color.White.copy(alpha = if (i == active) 0.6f else 0.3f), cornerRadius, p)
+                drawCircle(if (i == active) lineColor.copy(alpha = 0.4f) else Color.White, cornerRadius, p)
                 drawCircle(lineColor, cornerRadius, p, style = Stroke(3.dp.toPx()))
             }
 

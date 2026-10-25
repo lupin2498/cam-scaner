@@ -217,12 +217,18 @@ class ScanSessionViewModel(app: Application, private val state: SavedStateHandle
             filter = page.filter,
             adjustments = page.adjustments,
             skew = page.skew,
+            marks = page.marks,
             existingPageId = pageId,
         )
     }
 
     fun update(index: Int, transform: (DraftPage) -> DraftPage) {
         if (index in pages.indices) pages[index] = transform(pages[index])
+    }
+
+    /** Turns page [index] by [delta] degrees clockwise (a multiple of 90), its annotations with it. */
+    fun rotate(index: Int, delta: Int) = update(index) { p ->
+        p.copy(rotation = ((p.rotation + delta) % 360 + 360) % 360, marks = p.marks.map { it.rotated(delta) })
     }
 
     fun remove(index: Int) {

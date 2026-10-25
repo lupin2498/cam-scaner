@@ -11,7 +11,7 @@
     <string name="share">Chia sẻ</string>
     <string name="open">Mở</string>
     <string name="back">Quay lại</string>
-    <string name="next">Tiếp</string>
+    <string name="next">Tiếp theo</string>
     <string name="done">Xong</string>
     <string name="close">Đóng</string>
     <string name="copy">Sao chép</string>
@@ -30,7 +30,7 @@
     <string name="home_quick_pdf">Xuất PDF nhanh</string>
     <string name="home_delete_title">Xóa tài liệu?</string>
     <string name="home_delete_message">Tài liệu \"%1$s\" và tất cả các trang sẽ bị xóa vĩnh viễn.</string>
-    <string name="default_doc_name">Tài liệu %1$s</string>
+    <string name="default_doc_name">CamScaner %1$s</string>
     <string name="rename_title">Đổi tên tài liệu</string>
     <string name="rename_hint">Tên tài liệu</string>
 
@@ -53,21 +53,23 @@
     <string name="camera_capture_failed">Chụp ảnh thất bại</string>
 
     <!-- Cắt ảnh -->
-    <string name="crop_title">Căn chỉnh mép giấy</string>
+    <string name="crop_title">Cắt</string>
+    <string name="crop_editor">Khung cắt</string>
     <string name="crop_auto">Tự động</string>
-    <string name="crop_full">Toàn ảnh</string>
-    <string name="crop_rotate_left">Xoay trái</string>
-    <string name="crop_rotate_right">Xoay phải</string>
+    <string name="crop_full">Tất cả</string>
+    <string name="crop_rotate_left">Bên trái</string>
+    <string name="crop_rotate_right">Phải</string>
     <string name="crop_invalid">Vùng chọn không hợp lệ, hãy kéo các góc thành hình tứ giác lồi</string>
-    <string name="crop_page_of">Trang %1$d/%2$d</string>
+    <string name="crop_page_of">Cắt %1$d/%2$d</string>
     <string name="crop_delete_page">Bỏ trang</string>
 
     <!-- Bộ lọc -->
     <string name="filter_title">Làm đẹp ảnh</string>
-    <string name="filter_original">Gốc</string>
+    <string name="filter_original">Nguyên gốc</string>
     <string name="filter_lighten">Làm sáng</string>
-    <string name="filter_magic">Tăng màu</string>
-    <string name="filter_no_shadow">Xóa bóng</string>
+    <string name="filter_enhance">Tăng cường</string>
+    <string name="filter_magic">Thần kỳ màu</string>
+    <string name="filter_no_shadow">Không có bóng</string>
     <string name="filter_gray">Thang xám</string>
     <string name="filter_bw">Đen trắng</string>
     <string name="filter_bw_soft">Bản sao</string>
@@ -86,6 +88,25 @@
     <string name="filter_align_no_text">Không nhận ra hướng chữ, đã làm thẳng trang</string>
     <string name="filter_reset">Đặt lại</string>
     <string name="filter_saving">Đang lưu trang…</string>
+    <string name="filter_compare">So sánh</string>
+    <string name="filter_strength">Cường độ</string>
+    <string name="filter_rename">Đổi tên</string>
+    <string name="filter_more">Thêm</string>
+    <string name="filter_markup">Đánh dấu</string>
+    <string name="filter_sign">Ký tên</string>
+    <string name="filter_extract_text">Trích xuất văn bản</string>
+    <string name="filter_extracting">Đang trích xuất văn bản…</string>
+    <string name="markup_pen">Bút</string>
+    <string name="markup_highlighter">Dạ quang</string>
+    <string name="markup_undo">Hoàn tác</string>
+    <string name="markup_clear">Xoá hết</string>
+    <string name="markup_color">Màu bút</string>
+    <string name="markup_hint">Vẽ trực tiếp lên trang</string>
+    <string name="sign_pad_title">Vẽ chữ ký</string>
+    <string name="sign_redraw">Vẽ lại</string>
+    <string name="sign_place">Đặt chữ ký</string>
+    <string name="sign_hint">Kéo chữ ký để di chuyển, kéo góc dưới phải để đổi cỡ</string>
+    <string name="sign_pad_hint">Ký vào khung bên dưới</string>
 
     <!-- Tài liệu -->
     <string name="doc_add_camera">Chụp thêm</string>

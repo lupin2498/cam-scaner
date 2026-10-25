@@ -20,12 +20,14 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.CropFree
+import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.Rotate90DegreesCcw
+import androidx.compose.material.icons.filled.Rotate90DegreesCw
 import androidx.compose.material.icons.filled.DeleteOutline
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -35,7 +37,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -58,6 +59,7 @@ import coil.compose.AsyncImage
 import com.camscaner.app.R
 import com.camscaner.app.scanner.Corners
 import com.camscaner.app.scanner.ImageIO
+import com.camscaner.app.scanner.rotated
 import com.camscaner.app.ui.ScanSessionViewModel
 import com.camscaner.app.ui.components.BackButton
 import com.camscaner.app.ui.components.LightSystemBarIcons
@@ -83,12 +85,24 @@ fun CropScreen(session: ScanSessionViewModel, onBack: () -> Unit, onNext: () -> 
 
     BackHandler(onBack = onBack)
 
-    val image by produceState<ImageBitmap?>(null, page.originalFile) {
+    // the photo is shown turned the way the page will come out; corners are kept on the photo
+    val image by produceState<ImageBitmap?>(null, page.originalFile, page.rotation) {
         // never show the previous page's photo under this page's outline
         value = null
-        value = withContext(Dispatchers.IO) { ImageIO.decodeSampled(page.originalFile, 1600)?.asImageBitmap() }
+        value = withContext(Dispatchers.IO) {
+            ImageIO.decodeSampled(page.originalFile, 1600)?.let { ImageIO.rotate(it, page.rotation) }?.asImageBitmap()
+        }
     }
     val invalidMessage = stringResource(R.string.crop_invalid)
+    fun next() {
+        val bad = pages.indexOfFirst { it.corners != null && !it.corners.isValid() }
+        if (bad >= 0) {
+            session.currentIndex = bad
+            scope.launch { snackbar.showSnackbar(invalidMessage) }
+        } else {
+            onNext()
+        }
+    }
 
     Scaffold(
         containerColor = Color(0xFF101312),
@@ -103,15 +117,11 @@ fun CropScreen(session: ScanSessionViewModel, onBack: () -> Unit, onNext: () -> 
                 },
                 navigationIcon = { BackButton(onBack) },
                 actions = {
-                    TextButton(onClick = {
-                        val bad = pages.indexOfFirst { it.corners != null && !it.corners.isValid() }
-                        if (bad >= 0) {
-                            session.currentIndex = bad
-                            scope.launch { snackbar.showSnackbar(invalidMessage) }
-                        } else {
-                            onNext()
+                    if (pages.size > 1) {
+                        IconButton(onClick = { session.remove(index) }) {
+                            Icon(Icons.Filled.DeleteOutline, stringResource(R.string.crop_delete_page))
                         }
-                    }) { Text(stringResource(R.string.next)) }
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color(0xFF101312),
@@ -130,9 +140,11 @@ fun CropScreen(session: ScanSessionViewModel, onBack: () -> Unit, onNext: () -> 
                 } else {
                     CropEditor(
                         image = bmp,
-                        corners = page.corners ?: Corners.FULL,
-                        onCornersChange = { c -> session.update(index) { it.copy(corners = c) } },
+                        corners = (page.corners ?: Corners.FULL).rotated(page.rotation),
+                        // edited on the turned photo, stored on the photo as taken
+                        onCornersChange = { c -> session.update(index) { it.copy(corners = c.rotated(360 - it.rotation)) } },
                         modifier = Modifier.fillMaxSize(),
+                        label = stringResource(R.string.crop_editor),
                     )
                 }
             }
@@ -174,24 +186,24 @@ fun CropScreen(session: ScanSessionViewModel, onBack: () -> Unit, onNext: () -> 
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                ToolButton(Icons.Filled.AutoAwesome, stringResource(R.string.crop_auto)) {
-                    scope.launch { session.autoDetect(index) }
+                ToolButton(Icons.Filled.Rotate90DegreesCcw, stringResource(R.string.crop_rotate_left)) {
+                    session.rotate(index, 270)
                 }
-                ToolButton(Icons.Filled.CropFree, stringResource(R.string.crop_full)) {
-                    session.update(index) { it.copy(corners = null) }
+                ToolButton(Icons.Filled.Rotate90DegreesCw, stringResource(R.string.crop_rotate_right)) {
+                    session.rotate(index, 90)
                 }
-                if (pages.size > 1) {
-                    ToolButton(Icons.Filled.DeleteOutline, stringResource(R.string.crop_delete_page)) {
-                        session.remove(index)
+                // "all" keeps the whole photo; on a whole photo the button finds the sheet again
+                val whole = page.corners == null || page.corners == Corners.FULL
+                if (whole) {
+                    ToolButton(Icons.Filled.AutoAwesome, stringResource(R.string.crop_auto)) {
+                        scope.launch { session.autoDetect(index) }
+                    }
+                } else {
+                    ToolButton(Icons.Filled.Fullscreen, stringResource(R.string.crop_full)) {
+                        session.update(index) { it.copy(corners = null) }
                     }
                 }
-                Button(onClick = {
-                    val bad = pages.indexOfFirst { it.corners != null && !it.corners.isValid() }
-                    if (bad >= 0) {
-                        session.currentIndex = bad
-                        scope.launch { snackbar.showSnackbar(invalidMessage) }
-                    } else onNext()
-                }) { Text(stringResource(R.string.next)) }
+                ToolButton(Icons.AutoMirrored.Filled.ArrowForward, stringResource(R.string.next), onClick = ::next)
             }
         }
     }
