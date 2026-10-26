@@ -91,6 +91,13 @@ xcodegen generate              # tạo CamScaner.xcodeproj từ project.yml
 open CamScaner.xcodeproj       # chọn Team của bạn rồi chạy trên máy thật
 ```
 
+Unit test (hình học, bố cục PDF, dữ liệu, ZIP) và test giao diện XCUITest (nhập ảnh, cắt theo khổ, lọc, lưu,
+xuất PDF/TXT, hộp chữ, nhận dạng chữ, thư mục, tìm kiếm, thùng rác, giao diện tối, máy ảnh) chạy trên simulator:
+
+```bash
+xcodebuild test -project CamScaner.xcodeproj -scheme CamScaner -destination 'platform=iOS Simulator,name=iPhone 16 Pro'
+```
+
 Trên CI, job `ios` dựng bản không ký và đóng gói `.ipa`:
 
 ```bash
