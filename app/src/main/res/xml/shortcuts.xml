@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="scan"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_scan"
+        android:shortcutShortLabel="@string/home_scan"
+        android:shortcutLongLabel="@string/shortcut_scan_long">
+        <intent
+            android:action="com.camscaner.app.action.SCAN"
+            android:targetPackage="com.camscaner.app"
+            android:targetClass="com.camscaner.app.MainActivity" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="import"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_import"
+        android:shortcutShortLabel="@string/home_import"
+        android:shortcutLongLabel="@string/shortcut_import_long">
+        <intent
+            android:action="com.camscaner.app.action.IMPORT"
+            android:targetPackage="com.camscaner.app"
+            android:targetClass="com.camscaner.app.MainActivity" />
+    </shortcut>
+</shortcuts>

@@ -177,4 +177,19 @@ class PdfExportTest {
         repository.rename(doc.id, "Đổi tên")
         assertEquals("Đổi tên", repository.get(doc.id)!!.name)
     }
+
+    @Test
+    fun severalPagesPerSheet() {
+        val doc = document(
+            draft(TestImages.documentPhoto(), ScanFilter.MAGIC),
+            draft(TestImages.documentPhoto(rx = -0.2), ScanFilter.GRAY),
+            draft(TestImages.documentPhoto(ry = -0.2), ScanFilter.LIGHTEN),
+        )
+        val two = pageSizes(export(doc, PdfOptions(fileName = "two_up", pagesPerSheet = 2)))
+        assertEquals(2, two.size)
+        assertTrue("landscape sheet expected: ${two[0]}", two[0].first > two[0].second)
+        val four = pageSizes(export(doc, PdfOptions(fileName = "four_up", pagesPerSheet = 4, paperSize = PaperSize.A4)))
+        assertEquals(1, four.size)
+        assertTrue(four[0].first < four[0].second)
+    }
 }

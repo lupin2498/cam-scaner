@@ -83,7 +83,7 @@ class FilterViewModel : ViewModel() {
         val baseKey = "${page.id}|${page.originalFile.absolutePath}|${page.corners}|${page.paper}|${page.rotation}|${page.skew}"
         val filterKey = "$baseKey|${page.filter}|${page.adjustments}"
         // marks can hold thousands of points; their hash identifies them without a huge string
-        val key = "$filterKey|${page.marks.size}|${page.marks.hashCode()}"
+        val key = "$filterKey|${page.marks.size}|${page.marks.hashCode()}|${page.texts.hashCode()}"
         // a render for an intermediate state may still be running; it must not overwrite the
         // preview once the page is back to the state already shown
         previewJob?.cancel()
@@ -142,20 +142,21 @@ class FilterViewModel : ViewModel() {
                 cleanKey = filterKey
             }
         }
-        val originalWithMarks = "$baseKey|${page.marks.size}|${page.marks.hashCode()}"
+        val originalWithMarks = "$baseKey|${page.marks.size}|${page.marks.hashCode()}|${page.texts.hashCode()}"
+        val hasMarks = page.marks.isNotEmpty() || page.texts.isNotEmpty()
         val unfiltered = originalBitmap?.takeIf { originalKey == originalWithMarks } ?: run {
-            val turned = ImageIO.rotate(level.copy(Bitmap.Config.ARGB_8888, page.marks.isNotEmpty()), page.rotation)
+            val turned = ImageIO.rotate(level.copy(Bitmap.Config.ARGB_8888, hasMarks), page.rotation)
             withMarks(turned, page).also {
                 originalBitmap = it
                 originalKey = originalWithMarks
             }
         }
-        val marked = if (page.marks.isEmpty()) filtered else withMarks(filtered.copy(Bitmap.Config.ARGB_8888, true), page)
+        val marked = if (!hasMarks) filtered else withMarks(filtered.copy(Bitmap.Config.ARGB_8888, true), page)
         return Rendered(marked, filtered, unfiltered, angle)
     }
 
-    /** Draws the page's marks on [bitmap]; a mutable bitmap is drawn on in place. */
-    private fun withMarks(bitmap: Bitmap, page: DraftPage): Bitmap = MarkupRenderer.draw(bitmap, page.marks)
+    /** Draws the page's marks and texts on [bitmap]; a mutable bitmap is drawn on in place. */
+    private fun withMarks(bitmap: Bitmap, page: DraftPage): Bitmap = MarkupRenderer.draw(bitmap, page.marks, page.texts)
 
     fun renderThumbnails(page: DraftPage) {
         val key = "${page.id}|${page.corners}|${page.paper}|${page.rotation}|${page.skew}"

@@ -1,11 +1,18 @@
 package com.camscaner.app.ui.theme
 
+import android.app.Activity
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
+import com.camscaner.app.data.AppTheme
 
 val Brand = Color(0xFF0E9F6E)
 val BrandDark = Color(0xFF087A54)
@@ -52,10 +59,36 @@ private val DarkColors = darkColorScheme(
     error = Color(0xFFFFB4AB),
 )
 
+/** Whether the app is currently drawn dark (by setting or by the system). */
+val LocalDarkTheme = staticCompositionLocalOf { false }
+
 @Composable
-fun CamScanerTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = if (isSystemInDarkTheme()) DarkColors else LightColors,
-        content = content,
-    )
+fun CamScanerTheme(theme: AppTheme = AppTheme.SYSTEM, content: @Composable () -> Unit) {
+    val dark = when (theme) {
+        AppTheme.SYSTEM -> isSystemInDarkTheme()
+        AppTheme.LIGHT -> false
+        AppTheme.DARK -> true
+    }
+    val view = LocalView.current
+    if (!view.isInEditMode) {
+        SideEffect {
+            // a forced theme needs matching status bar icons; dark full-bleed screens set their own
+            (view.context as? Activity)?.window?.let { window ->
+                if (!darkScreenShown(window)) {
+                    val controller = WindowCompat.getInsetsController(window, view)
+                    controller.isAppearanceLightStatusBars = !dark
+                    controller.isAppearanceLightNavigationBars = !dark
+                }
+            }
+        }
+    }
+    CompositionLocalProvider(LocalDarkTheme provides dark) {
+        MaterialTheme(
+            colorScheme = if (dark) DarkColors else LightColors,
+            content = content,
+        )
+    }
 }
+
+/** Set by the components package: true while a dark full-bleed screen owns the system bar icons. */
+var darkScreenShown: (android.view.Window) -> Boolean = { false }

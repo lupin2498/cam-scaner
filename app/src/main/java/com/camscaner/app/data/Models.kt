@@ -5,6 +5,7 @@ import com.camscaner.app.scanner.Corners
 import com.camscaner.app.scanner.MarkStroke
 import com.camscaner.app.scanner.PaperPreset
 import com.camscaner.app.scanner.ScanFilter
+import com.camscaner.app.scanner.TextMark
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -20,8 +21,12 @@ data class ScanPage(
     val skew: Float? = 0f,
     /** Annotations and signatures drawn on the finished page. */
     val marks: List<MarkStroke> = emptyList(),
+    /** Text boxes typed onto the finished page. */
+    val texts: List<TextMark> = emptyList(),
     /** Paper format the page was cut to; the corrected page gets exactly its proportions. Null measures them. */
     val paper: PaperPreset? = null,
+    /** Text recognised on the finished page, once it has been; searched and exported with the document. */
+    val ocrText: String? = null,
     /** Size of the rendered page image in pixels. */
     val width: Int = 0,
     val height: Int = 0,
@@ -31,6 +36,7 @@ data class ScanPage(
         put("id", id)
         corners?.let { c -> put("corners", JSONArray().apply { c.toFloatArray().forEach { put(it.toDouble()) } }) }
         paper?.let { put("paper", it.name) }
+        ocrText?.let { put("ocr", it) }
         put("rotation", rotation)
         put("filter", filter.key)
         put("brightness", adjustments.brightness.toDouble())
@@ -38,6 +44,7 @@ data class ScanPage(
         put("sharpness", adjustments.sharpness.toDouble())
         if (adjustments.strength != 1f) put("strength", adjustments.strength.toDouble())
         if (marks.isNotEmpty()) put("marks", MarkStroke.listToJson(marks))
+        if (texts.isNotEmpty()) put("texts", TextMark.listToJson(texts))
         if (skew == null) put("skewAuto", true) else put("skew", skew.toDouble())
         put("width", width)
         put("height", height)
@@ -61,7 +68,9 @@ data class ScanPage(
                     strength = o.optDouble("strength", 1.0).toFloat(),
                 ),
                 marks = MarkStroke.listFromJson(o.optJSONArray("marks")),
+                texts = TextMark.listFromJson(o.optJSONArray("texts")),
                 paper = if (o.has("paper")) PaperPreset.fromName(o.optString("paper")) else null,
+                ocrText = if (o.has("ocr")) o.optString("ocr") else null,
                 // pages saved before straightening existed keep their look
                 skew = if (o.optBoolean("skewAuto", false)) null else o.optDouble("skew", 0.0).toFloat(),
                 width = o.optInt("width", 0),
@@ -78,12 +87,22 @@ data class ScanDocument(
     val createdAt: Long,
     val updatedAt: Long,
     val pages: List<ScanPage>,
+    /** Folder the document is filed in; null keeps it at the top level. */
+    val folderId: String? = null,
+    /** When the document was moved to the trash; null while it is in use. */
+    val deletedAt: Long? = null,
 ) {
+    /** True when any page's recognised text (or the name) contains [query], ignoring case. */
+    fun matches(query: String): Boolean =
+        name.contains(query, ignoreCase = true) || pages.any { it.ocrText?.contains(query, ignoreCase = true) == true }
+
     fun toJson(): JSONObject = JSONObject().apply {
         put("id", id)
         put("name", name)
         put("createdAt", createdAt)
         put("updatedAt", updatedAt)
+        folderId?.let { put("folder", it) }
+        deletedAt?.let { put("deletedAt", it) }
         put("pages", JSONArray().apply { pages.forEach { put(it.toJson()) } })
     }
 
@@ -96,8 +115,23 @@ data class ScanDocument(
                 createdAt = o.optLong("createdAt"),
                 updatedAt = o.optLong("updatedAt"),
                 pages = List(arr.length()) { ScanPage.fromJson(arr.getJSONObject(it)) },
+                folderId = if (o.has("folder")) o.optString("folder").ifEmpty { null } else null,
+                deletedAt = if (o.has("deletedAt")) o.optLong("deletedAt") else null,
             )
         }
+    }
+}
+
+/** A folder documents are filed in (one level). */
+data class Folder(val id: String, val name: String, val createdAt: Long) {
+    fun toJson(): JSONObject = JSONObject().apply {
+        put("id", id)
+        put("name", name)
+        put("createdAt", createdAt)
+    }
+
+    companion object {
+        fun fromJson(o: JSONObject) = Folder(o.getString("id"), o.optString("name"), o.optLong("createdAt"))
     }
 }
 
@@ -118,6 +152,8 @@ data class DraftPage(
     val skew: Float? = null,
     /** Annotations and signatures drawn on the finished page. */
     val marks: List<MarkStroke> = emptyList(),
+    /** Text boxes typed onto the finished page. */
+    val texts: List<TextMark> = emptyList(),
     /** Paper format the outline was fitted to; the page gets exactly its proportions. Null measures them. */
     val paper: PaperPreset? = null,
     /** Set when re-editing a page that already belongs to a document. */

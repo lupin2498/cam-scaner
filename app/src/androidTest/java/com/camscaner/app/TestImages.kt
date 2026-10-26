@@ -141,6 +141,22 @@ object TestImages {
         return paper
     }
 
+    /** A small PDF with [pages] pages of text, as another app would share it. */
+    fun samplePdf(file: File, pages: Int = 2): File {
+        file.parentFile?.mkdirs()
+        val pdf = android.graphics.pdf.PdfDocument()
+        for (i in 1..pages) {
+            val page = pdf.startPage(android.graphics.pdf.PdfDocument.PageInfo.Builder(595, 842, i).create())
+            val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK; textSize = 28f }
+            page.canvas.drawText("$MARKER trang $i", 60f, 120f, paint)
+            page.canvas.drawRect(60f, 200f, 300f, 260f, Paint().apply { color = Color.rgb(200, 40, 40) })
+            pdf.finishPage(page)
+        }
+        FileOutputStream(file).use { pdf.writeTo(it) }
+        pdf.close()
+        return file
+    }
+
     fun save(bitmap: Bitmap, file: File): File {
         file.parentFile?.mkdirs()
         FileOutputStream(file).use { bitmap.compress(Bitmap.CompressFormat.JPEG, 92, it) }

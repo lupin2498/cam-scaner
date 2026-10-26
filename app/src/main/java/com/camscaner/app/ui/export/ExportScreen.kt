@@ -1,7 +1,11 @@
 package com.camscaner.app.ui.export
 
+import android.Manifest
 import android.app.Application
+import android.content.Context
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -30,10 +34,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -50,6 +55,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -66,6 +72,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
@@ -73,6 +80,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.camscaner.app.R
 import com.camscaner.app.ScannerApp
 import com.camscaner.app.data.ScanDocument
+import com.camscaner.app.export.Exporters
+import com.camscaner.app.ocr.DocumentOcr
 import com.camscaner.app.pdf.PageMargin
 import com.camscaner.app.pdf.PageOrientation
 import com.camscaner.app.pdf.PageSize
@@ -95,6 +104,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
+/** Exports besides the PDF. */
+enum class ExtraExport { LONG_IMAGE, TXT, DOCX, DOCX_IMAGES }
+
 class ExportViewModel(app: Application, handle: SavedStateHandle) : AndroidViewModel(app) {
     private val scannerApp = app as ScannerApp
     val docId: String = checkNotNull(handle["docId"])
@@ -105,21 +117,27 @@ class ExportViewModel(app: Application, handle: SavedStateHandle) : AndroidViewM
 
     var options by mutableStateOf(scannerApp.settings.pdfOptions(repository.get(docId)?.name ?: "scan"))
         private set
+    /** PDF export progress, or null when none runs. */
     var progress by mutableStateOf<Float?>(null)
         private set
+    /** Message of another export (OCR, image stitching) while it runs. */
+    var working by mutableStateOf<String?>(null)
+        private set
+    /** The file exported last (PDF or another format). */
     var result by mutableStateOf<File?>(null)
         private set
     var error by mutableStateOf<String?>(null)
+    var message by mutableStateOf<String?>(null)
 
     fun thumb(pageId: String) = repository.thumbFile(docId, pageId)
 
-    /** Any change makes the previously exported file stale. */
+    /** Any change makes the previously exported PDF stale. */
     fun updateOptions(transform: (PdfOptions) -> PdfOptions) {
         options = transform(options)
-        result = null
+        if (result?.extension == "pdf") result = null
     }
 
-    /** Copies the exported PDF to a user-chosen location; outlives the screen like the export. */
+    /** Copies the exported file to a user-chosen location; outlives the screen like the export. */
     fun saveTo(uri: Uri) {
         val file = result ?: return
         viewModelScope.launch {
@@ -135,21 +153,80 @@ class ExportViewModel(app: Application, handle: SavedStateHandle) : AndroidViewM
         }
     }
 
-    fun export() {
+    private fun exportDir() = File(scannerApp.cacheDir, "exports").apply { mkdirs() }
+
+    /** Builds the PDF with the current options and then runs [then] on it (e.g. printing). */
+    fun export(then: (File) -> Unit = {}) {
         val doc = document.value ?: return
-        if (progress != null) return
+        if (progress != null || working != null) return
         scannerApp.settings.savePdfOptions(options)
         result = null
         progress = 0f
         viewModelScope.launch {
             try {
-                val dir = File(scannerApp.cacheDir, "exports").apply { mkdirs() }
-                val out = File(dir, Share.safeFileName(options.fileName) + ".pdf")
-                result = scannerApp.pdfExporter.export(doc, options, out) { p -> progress = p }
+                val out = File(exportDir(), Share.safeFileName(options.fileName) + ".pdf")
+                val file = scannerApp.pdfExporter.export(doc, options, out) { p -> progress = p }
+                result = file
+                then(file)
             } catch (e: Exception) {
                 error = e.message ?: e.javaClass.simpleName
             } finally {
                 progress = null
+            }
+        }
+    }
+
+    /** Prints the PDF, exporting it first when the current one is stale. */
+    fun print(context: Context) {
+        val name = options.fileName.ifBlank { "scan" }
+        val pdf = result?.takeIf { it.extension == "pdf" && it.exists() }
+        if (pdf != null) Exporters.print(context, pdf, name) else export { Exporters.print(context, it, name) }
+    }
+
+    fun saveToGallery() {
+        val doc = document.value ?: return
+        if (working != null) return
+        working = scannerApp.getString(R.string.processing)
+        viewModelScope.launch {
+            try {
+                val n = Exporters.saveToGallery(scannerApp, doc, repository)
+                message = scannerApp.getString(R.string.export_gallery_done, n)
+            } catch (e: Exception) {
+                error = e.message ?: e.javaClass.simpleName
+            } finally {
+                working = null
+            }
+        }
+    }
+
+    fun exportExtra(kind: ExtraExport) {
+        val doc = document.value ?: return
+        if (progress != null || working != null) return
+        working = scannerApp.getString(R.string.processing)
+        viewModelScope.launch {
+            try {
+                val base = Share.safeFileName(options.fileName)
+                result = when (kind) {
+                    ExtraExport.LONG_IMAGE -> Exporters.longImage(doc, repository, File(exportDir(), "$base.jpg"))
+                    ExtraExport.TXT, ExtraExport.DOCX, ExtraExport.DOCX_IMAGES -> {
+                        val read = DocumentOcr.ensureText(doc, repository) { done, total ->
+                            working = scannerApp.getString(R.string.export_ocr_progress, done, total)
+                        }
+                        if (read.pages.all { it.ocrText.isNullOrBlank() } && kind == ExtraExport.TXT) {
+                            message = scannerApp.getString(R.string.export_text_empty)
+                        }
+                        when (kind) {
+                            ExtraExport.TXT -> Exporters.textFile(DocumentOcr.plainText(read), File(exportDir(), "$base.txt"))
+                            else -> Exporters.docx(read, repository, File(exportDir(), "$base.docx"), withImages = kind == ExtraExport.DOCX_IMAGES)
+                        }
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                error = e.message ?: e.javaClass.simpleName
+            } finally {
+                working = null
             }
         }
     }
@@ -165,8 +242,23 @@ fun ExportScreen(onBack: () -> Unit) {
     val o = vm.options
     fun update(t: (PdfOptions) -> PdfOptions) = vm.updateOptions(t)
 
-    val saveLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
+    val saveLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
         if (uri != null) vm.saveTo(uri)
+    }
+    val permissionMessage = stringResource(R.string.export_gallery_permission)
+    val storagePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) vm.saveToGallery() else Toast.makeText(context, permissionMessage, Toast.LENGTH_SHORT).show()
+    }
+    fun saveToGallery() {
+        val needsPermission = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED
+        if (needsPermission) storagePermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE) else vm.saveToGallery()
+    }
+    LaunchedEffect(vm.message) {
+        vm.message?.let {
+            vm.message = null
+            Toast.makeText(context, it, Toast.LENGTH_LONG).show()
+        }
     }
 
     Scaffold(
@@ -198,9 +290,10 @@ fun ExportScreen(onBack: () -> Unit) {
             vm.result?.let { file ->
                 ResultCard(
                     file = file,
-                    onOpen = { Share.openPdf(context, file) },
-                    onShare = { Share.sharePdf(context, file) },
+                    onOpen = { Share.openFile(context, file) },
+                    onShare = { Share.shareFile(context, file) },
                     onSave = { saveLauncher.launch(file.name) },
+                    onPrint = if (file.extension == "pdf") ({ vm.print(context) }) else null,
                 )
             }
 
@@ -296,6 +389,21 @@ fun ExportScreen(onBack: () -> Unit) {
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
+
+            SectionTitle(stringResource(R.string.export_more_title))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                val enabled = doc.pages.isNotEmpty()
+                OutlinedButton(onClick = { vm.print(context) }, enabled = enabled) {
+                    Icon(Icons.Filled.Print, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text(stringResource(R.string.export_print))
+                }
+                OutlinedButton(onClick = ::saveToGallery, enabled = enabled) { Text(stringResource(R.string.export_gallery)) }
+                OutlinedButton(onClick = { vm.exportExtra(ExtraExport.LONG_IMAGE) }, enabled = enabled) { Text(stringResource(R.string.export_long_image)) }
+                OutlinedButton(onClick = { vm.exportExtra(ExtraExport.TXT) }, enabled = enabled) { Text(stringResource(R.string.export_txt)) }
+                OutlinedButton(onClick = { vm.exportExtra(ExtraExport.DOCX) }, enabled = enabled) { Text(stringResource(R.string.export_docx)) }
+                OutlinedButton(onClick = { vm.exportExtra(ExtraExport.DOCX_IMAGES) }, enabled = enabled) { Text(stringResource(R.string.export_docx_images)) }
+            }
             Spacer(Modifier.height(24.dp))
         }
     }
@@ -303,6 +411,7 @@ fun ExportScreen(onBack: () -> Unit) {
     vm.progress?.let { p ->
         ProgressDialog(stringResource(R.string.export_progress, (p * 100).toInt()), p)
     }
+    vm.working?.let { ProgressDialog(it) }
     vm.error?.let { message ->
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { vm.error = null },
@@ -313,7 +422,8 @@ fun ExportScreen(onBack: () -> Unit) {
 }
 
 @Composable
-private fun ResultCard(file: File, onOpen: () -> Unit, onShare: () -> Unit, onSave: () -> Unit) {
+private fun ResultCard(file: File, onOpen: () -> Unit, onShare: () -> Unit, onSave: () -> Unit, onPrint: (() -> Unit)?) {
+    val pdf = file.extension == "pdf"
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
@@ -323,16 +433,16 @@ private fun ResultCard(file: File, onOpen: () -> Unit, onShare: () -> Unit, onSa
                 Icon(Icons.Filled.CheckCircle, null, tint = MaterialTheme.colorScheme.primary)
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    stringResource(R.string.export_done, Share.formatSize(file.length())),
+                    stringResource(if (pdf) R.string.export_done else R.string.export_file_done, Share.formatSize(file.length())),
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )
             }
             Text(file.name, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
             Spacer(Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = onOpen) {
-                    Icon(Icons.Filled.OpenInNew, null, Modifier.size(18.dp))
+                    Icon(Icons.AutoMirrored.Filled.OpenInNew, null, Modifier.size(18.dp))
                     Spacer(Modifier.width(4.dp))
                     Text(stringResource(R.string.open))
                 }
@@ -345,6 +455,13 @@ private fun ResultCard(file: File, onOpen: () -> Unit, onShare: () -> Unit, onSa
                     Icon(Icons.Filled.Download, null, Modifier.size(18.dp))
                     Spacer(Modifier.width(4.dp))
                     Text(stringResource(R.string.export_save_device))
+                }
+                if (onPrint != null) {
+                    OutlinedButton(onClick = onPrint) {
+                        Icon(Icons.Filled.Print, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text(stringResource(R.string.export_print))
+                    }
                 }
             }
         }

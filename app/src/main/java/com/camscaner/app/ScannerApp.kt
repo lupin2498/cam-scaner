@@ -5,6 +5,7 @@ import android.content.Context
 import android.util.Log
 import com.camscaner.app.data.DocumentRepository
 import com.camscaner.app.data.SettingsRepository
+import com.camscaner.app.data.SignatureStore
 import com.camscaner.app.pdf.PdfExporter
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import org.opencv.android.OpenCVLoader
@@ -15,6 +16,8 @@ class ScannerApp : Application() {
         private set
     lateinit var settings: SettingsRepository
         private set
+    lateinit var signatures: SignatureStore
+        private set
     val pdfExporter: PdfExporter by lazy { PdfExporter(documents) }
 
     override fun onCreate() {
@@ -23,6 +26,7 @@ class ScannerApp : Application() {
         PDFBoxResourceLoader.init(applicationContext)
         documents = DocumentRepository(this)
         settings = SettingsRepository(this)
+        signatures = SignatureStore(this)
     }
 
     private companion object {

@@ -45,6 +45,7 @@ import androidx.compose.material.icons.filled.Gesture
 import androidx.compose.material.icons.filled.Rotate90DegreesCcw
 import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material.icons.filled.TextFields
+import androidx.compose.material.icons.filled.Title
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -166,9 +167,10 @@ fun FilterScreen(session: ScanSessionViewModel, onBack: () -> Unit, onSaved: (do
             // while a new preview is computed the page may still be shown turned the old way
             image = if (vm.busy) null else vm.cleanPreview,
             initialMarks = page.marks,
+            initialTexts = page.texts,
             mode = mode,
-            onDone = { marks ->
-                session.update(session.pages.indexOfFirst { it.id == pageId }) { it.copy(marks = marks) }
+            onDone = { marks, texts ->
+                session.update(session.pages.indexOfFirst { it.id == pageId }) { it.copy(marks = marks, texts = texts) }
                 markup = null
             },
             onCancel = { markup = null },
@@ -370,6 +372,10 @@ fun FilterScreen(session: ScanSessionViewModel, onBack: () -> Unit, onSaved: (do
                     ToolbarItem(Icons.Filled.Gesture, stringResource(R.string.filter_sign)) {
                         panel = Panel.NONE
                         markup = MarkupMode.SIGN
+                    }
+                    ToolbarItem(Icons.Filled.Title, stringResource(R.string.markup_text)) {
+                        panel = Panel.NONE
+                        markup = MarkupMode.TEXT
                     }
                     ToolbarItem(Icons.Filled.AutoFixHigh, stringResource(R.string.filter_auto_align), onClick = ::autoAlign)
                     ToolbarItem(Icons.Filled.Straighten, stringResource(R.string.filter_straighten), isSelected = panel == Panel.STRAIGHTEN) {

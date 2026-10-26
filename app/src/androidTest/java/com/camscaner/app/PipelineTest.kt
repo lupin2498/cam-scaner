@@ -11,7 +11,10 @@ import com.camscaner.app.scanner.ImageIO
 import com.camscaner.app.scanner.MarkStroke
 import com.camscaner.app.scanner.PageAligner
 import com.camscaner.app.scanner.PageProcessor
+import com.camscaner.app.scanner.PaperFit
+import com.camscaner.app.scanner.PaperPreset
 import com.camscaner.app.scanner.ScanFilter
+import com.camscaner.app.scanner.TextMark
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -229,5 +232,57 @@ class PipelineTest {
         val scene = TestImages.documentPhoto()
         val page = PageProcessor.render(scene.bitmap, null, 0, ScanFilter.ORIGINAL, Adjustments(), 1000)
         assertTrue(abs(page.width.toDouble() / page.height - scene.bitmap.width.toDouble() / scene.bitmap.height) < 0.01)
+    }
+
+    @Test
+    fun textMarksSurviveStorageAndAreDrawn() {
+        val page = ScanPage(id = "t", corners = null, texts = listOf(TextMark("Xin chào", 0.5f, 0.5f, 0.06f, Color.RED, 90)))
+        val back = ScanPage.fromJson(org.json.JSONObject(page.toJson().toString()))
+        assertEquals(page.texts, back.texts)
+        // the words end up as red ink around the middle of the finished page
+        val out = PageProcessor.render(
+            TestImages.flatPage(), null, 0, ScanFilter.ORIGINAL, Adjustments(), 1400,
+            texts = listOf(TextMark("XXXXXXXX", 0.5f, 0.5f, 0.08f, Color.RED)),
+        )
+        var red = 0
+        for (y in (out.height * 0.44).toInt() until (out.height * 0.56).toInt()) {
+            for (x in (out.width * 0.2).toInt() until (out.width * 0.8).toInt()) {
+                val c = out.getPixel(x, y)
+                if (Color.red(c) > 150 && Color.green(c) < 100) red++
+            }
+        }
+        assertTrue("red text pixels: $red", red > 300)
+    }
+
+    @Test
+    fun warpLockedToAFormatHasItsProportions() {
+        val scene = TestImages.documentPhoto(rx = 0.3, ry = 0.15)
+        val w = scene.bitmap.width
+        val h = scene.bitmap.height
+        val sheet = DocumentDetector.detect(scene.bitmap)!!
+        // the region of a square inside the A4 sheet, cut and corrected as a square
+        val square = PaperFit.fit(sheet, PaperPreset.SQUARE, w, h)
+        assertTrue(square.isValid())
+        val squarePage = PageProcessor.warp(scene.bitmap, square, 1200, PaperPreset.SQUARE)
+        assertEquals(1.0, squarePage.width.toDouble() / squarePage.height, 0.01)
+        // an upright sheet cut to the card format comes out as an upright card
+        val card = PaperFit.fit(sheet, PaperPreset.ID_CARD, w, h)
+        val cardPage = PageProcessor.warp(scene.bitmap, card, 1200, PaperPreset.ID_CARD)
+        assertEquals(53.98 / 85.6, cardPage.width.toDouble() / cardPage.height, 0.01)
+        // the sheet itself, left to the measurement, is still A4
+        val free = PageProcessor.warp(scene.bitmap, sheet, 1200)
+        assertEquals(1 / sqrt(2.0), free.width.toDouble() / free.height, 0.01)
+    }
+
+    @Test
+    fun spreadSplitsIntoTwoHalvesOfTheSheet() {
+        val scene = TestImages.documentPhoto(paperRatio = sqrt(2.0), rx = 0.2, ry = 0.1)
+        val spread = DocumentDetector.detect(scene.bitmap)!!
+        val (left, right) = PaperFit.split(spread)
+        val l = PageProcessor.warp(scene.bitmap, left, 1000)
+        val r = PageProcessor.warp(scene.bitmap, right, 1000)
+        // each half of a landscape A4 spread is a portrait A5
+        assertEquals(1 / sqrt(2.0), l.width.toDouble() / l.height, 0.03)
+        assertEquals(1 / sqrt(2.0), r.width.toDouble() / r.height, 0.03)
     }
 }

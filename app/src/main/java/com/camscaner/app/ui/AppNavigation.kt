@@ -4,6 +4,10 @@ import android.net.Uri
 import android.util.Log
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -22,6 +26,7 @@ import com.camscaner.app.ui.document.DocumentScreen
 import com.camscaner.app.ui.export.ExportScreen
 import com.camscaner.app.ui.filter.FilterScreen
 import com.camscaner.app.ui.home.HomeScreen
+import com.camscaner.app.ui.home.TrashScreen
 import com.camscaner.app.ui.ocr.OcrScreen
 import com.camscaner.app.ui.page.PageViewerScreen
 import com.camscaner.app.ui.settings.SettingsScreen
@@ -36,6 +41,7 @@ object Routes {
     const val EXPORT = "export/{docId}"
     const val OCR = "ocr/{docId}/{pageId}"
     const val SETTINGS = "settings"
+    const val TRASH = "trash"
 
     fun document(id: String) = "document/$id"
     fun page(id: String, index: Int) = "page/$id/$index"
@@ -44,15 +50,36 @@ object Routes {
 }
 
 @Composable
-fun AppNavigation(sharedUris: List<Uri>, onSharedConsumed: () -> Unit) {
+fun AppNavigation(
+    sharedUris: List<Uri>,
+    onSharedConsumed: () -> Unit,
+    startAction: String? = null,
+    onStartActionConsumed: () -> Unit = {},
+) {
     val nav = rememberNavController()
     val session: ScanSessionViewModel = viewModel()
 
     val lifecycle = LocalLifecycleOwner.current.lifecycle
+    // "import" from a launcher shortcut opens the picker on the home screen
+    var importRequested by remember { mutableStateOf(false) }
+
+    LaunchedEffect(startAction) {
+        when (startAction) {
+            "scan" -> {
+                onStartActionConsumed()
+                session.start(null)
+                nav.navigate(Routes.CAMERA) { launchSingleTop = true }
+            }
+            "import" -> {
+                onStartActionConsumed()
+                importRequested = true
+            }
+        }
+    }
 
     fun importAndCrop(docId: String?, returnRoute: String?, uris: List<Uri>) {
         session.start(docId, returnRoute)
-        session.importImages(uris)
+        session.importFiles(uris)
     }
 
     LaunchedEffect(session.cropReady) {
@@ -82,7 +109,13 @@ fun AppNavigation(sharedUris: List<Uri>, onSharedConsumed: () -> Unit) {
                 onImport = { uris -> importAndCrop(null, null, uris) },
                 onOpenDocument = { nav.navigate(Routes.document(it)) },
                 onSettings = { nav.navigate(Routes.SETTINGS) },
+                onTrash = { nav.navigate(Routes.TRASH) },
+                openImport = importRequested,
+                onImportOpened = { importRequested = false },
             )
+        }
+        composable(Routes.TRASH) {
+            TrashScreen(onBack = { nav.popBackStack() })
         }
         composable(Routes.CAMERA) {
             CameraScreen(

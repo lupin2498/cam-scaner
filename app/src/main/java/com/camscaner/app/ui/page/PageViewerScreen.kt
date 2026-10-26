@@ -87,7 +87,7 @@ class PageViewerViewModel(app: Application, handle: SavedStateHandle) : AndroidV
             try {
                 repository.updatePage(docId, page.id) { p ->
                     // annotations are drawn on the finished page and turn with it
-                    p.copy(rotation = (p.rotation + 90) % 360, marks = p.marks.map { it.rotated(90) })
+                    p.copy(rotation = (p.rotation + 90) % 360, marks = p.marks.map { it.rotated(90) }, texts = p.texts.map { it.rotated(90) })
                 }
             } finally {
                 rotating = false

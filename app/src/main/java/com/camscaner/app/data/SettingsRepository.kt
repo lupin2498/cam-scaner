@@ -1,10 +1,12 @@
 package com.camscaner.app.data
 
 import android.content.Context
+import androidx.annotation.StringRes
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.edit
+import com.camscaner.app.R
 import com.camscaner.app.pdf.PageMargin
 import com.camscaner.app.pdf.PageOrientation
 import com.camscaner.app.pdf.PaperSize
@@ -76,6 +78,41 @@ class SettingsRepository(context: Context) {
             prefs.edit { putString(KEY_CAMERA_PAPER, value?.name) }
         }
 
+    private var _appLock by mutableStateOf(prefs.getBoolean(KEY_APP_LOCK, false))
+    /** Ask for the device's fingerprint, face or screen lock when the app is opened. */
+    var appLock: Boolean
+        get() = _appLock
+        set(value) {
+            _appLock = value
+            prefs.edit { putBoolean(KEY_APP_LOCK, value) }
+        }
+
+    private var _theme by mutableStateOf(enumOr(prefs.getString(KEY_THEME, null), AppTheme.SYSTEM))
+    var theme: AppTheme
+        get() = _theme
+        set(value) {
+            _theme = value
+            prefs.edit { putString(KEY_THEME, value.name) }
+        }
+
+    private var _namePrefix by mutableStateOf(prefs.getString(KEY_NAME_PREFIX, "").orEmpty())
+    /** Word new documents are named with before the date; empty uses the app's name. */
+    var namePrefix: String
+        get() = _namePrefix
+        set(value) {
+            _namePrefix = value.trim()
+            prefs.edit { putString(KEY_NAME_PREFIX, value.trim()) }
+        }
+
+    private var _sortOrder by mutableStateOf(enumOr(prefs.getString(KEY_SORT, null), SortOrder.UPDATED))
+    /** Order of the document list. */
+    var sortOrder: SortOrder
+        get() = _sortOrder
+        set(value) {
+            _sortOrder = value
+            prefs.edit { putString(KEY_SORT, value.name) }
+        }
+
     private var _autoStraighten by mutableStateOf(prefs.getBoolean(KEY_AUTO_STRAIGHTEN, true))
     /** Level the text lines of new pages automatically. */
     var autoStraighten: Boolean
@@ -132,5 +169,29 @@ class SettingsRepository(context: Context) {
         const val KEY_PDF_WATERMARK = "pdf_watermark"
         const val KEY_CAMERA_PAPER = "camera_paper"
         const val KEY_PDF_PER_SHEET = "pdf_per_sheet"
+        const val KEY_SORT = "sort_order"
+        const val KEY_APP_LOCK = "app_lock"
+        const val KEY_THEME = "theme"
+        const val KEY_NAME_PREFIX = "name_prefix"
+    }
+}
+
+/** Light or dark looks, or whatever the system uses. */
+enum class AppTheme(@StringRes val label: Int) {
+    SYSTEM(R.string.theme_system),
+    LIGHT(R.string.theme_light),
+    DARK(R.string.theme_dark),
+}
+
+/** How the document list is ordered. */
+enum class SortOrder(@StringRes val label: Int) {
+    UPDATED(R.string.sort_updated),
+    CREATED(R.string.sort_created),
+    NAME(R.string.sort_name);
+
+    fun sort(docs: List<ScanDocument>): List<ScanDocument> = when (this) {
+        UPDATED -> docs.sortedByDescending { it.updatedAt }
+        CREATED -> docs.sortedByDescending { it.createdAt }
+        NAME -> docs.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
     }
 }

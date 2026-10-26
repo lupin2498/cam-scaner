@@ -23,6 +23,7 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.isDialog
+import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -66,7 +67,8 @@ class UiFlowTest {
         // a cold emulator may show "launcher isn't responding" on top of the app
         TestImages.shell("am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS")
         waitForRepository()
-        app.documents.documents.value.forEach { app.documents.delete(it.id) }
+        app.documents.all.value.forEach { app.documents.deleteForever(it.id) }
+        app.documents.folders.value.forEach { app.documents.deleteFolder(it.id) }
         app.settings.batchMode = false
         app.settings.autoCapture = false
         app.settings.defaultFilter = com.camscaner.app.scanner.ScanFilter.ENHANCE
@@ -203,7 +205,9 @@ class UiFlowTest {
         scenario = ActivityScenario.launch(MainActivity::class.java)
         compose.waitText(str(R.string.home_empty_title))
         shot("01_home_empty")
-        compose.onNodeWithContentDescription(str(R.string.home_settings)).performClick()
+        // settings live in the "more" menu of the home screen
+        compose.onNodeWithContentDescription(str(R.string.home_more)).performClick()
+        compose.onNodeWithText(str(R.string.home_settings)).performClick()
         compose.waitText(str(R.string.settings_default_filter))
         shot("02_settings")
         compose.onNodeWithText(str(R.string.filter_bw)).performClick()
@@ -700,5 +704,244 @@ class UiFlowTest {
         compose.waitText(str(R.string.doc_reorder_hint))
         shot("16_two_pages")
         assertEquals(1, app.documents.documents.value.size)
+    }
+
+    /** True when [p] lies inside the convex quadrilateral [q]. */
+    private fun inside(q: com.camscaner.app.scanner.Corners, p: com.camscaner.app.scanner.Pt): Boolean {
+        val pts = q.points
+        var sign = 0
+        for (i in 0 until 4) {
+            val a = pts[i]
+            val b = pts[(i + 1) % 4]
+            val cross = (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x)
+            val s = if (cross > 1e-5f) 1 else if (cross < -1e-5f) -1 else 0
+            if (s == 0) continue
+            if (sign == 0) sign = s else if (s != sign) return false
+        }
+        return true
+    }
+
+    /** Paper formats fit the outline inside the detected sheet; "Chia đôi" turns a page into two. */
+    @Test
+    fun paperFormatsAndSplitOnTheCropScreen() {
+        val scene = TestImages.documentPhoto(rx = 0.2, ry = 0.1)
+        val file = TestImages.save(scene.bitmap, File(context.cacheDir, "exports/paper_test.jpg"))
+        val intent = Intent(context, MainActivity::class.java)
+            .setAction(Intent.ACTION_SEND)
+            .setType("image/jpeg")
+            .putExtra(Intent.EXTRA_STREAM, Share.uriFor(context, file))
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        scenario = ActivityScenario.launch(intent)
+        compose.waitDescription(str(R.string.crop_editor), 30_000)
+        val detected = firstDraft()!!.detected!!
+
+        compose.onNodeWithText(str(R.string.paper_square)).performScrollTo().performClick()
+        compose.waitUntil(5_000) { firstDraft()?.paper == com.camscaner.app.scanner.PaperPreset.SQUARE }
+        val fitted = firstDraft()!!.corners!!
+        assertTrue("outline unchanged", fitted != detected)
+        fitted.points.forEach { assertTrue("corner $it outside the sheet", inside(detected, it)) }
+        Thread.sleep(500)
+        shot("28_crop_paper")
+        compose.onNodeWithText(str(R.string.paper_free)).performScrollTo().performClick()
+        compose.waitUntil(5_000) { firstDraft()?.paper == null && firstDraft()?.corners == detected }
+
+        // the page is split into its left and right halves, which share the photo
+        compose.onNodeWithText(str(R.string.crop_split)).performClick()
+        compose.waitUntil(5_000) { draft(1) != null }
+        assertEquals(draft(0)!!.originalFile, draft(1)!!.originalFile)
+        assertTrue(draft(0)!!.corners!!.tr.x <= draft(1)!!.corners!!.tr.x)
+        compose.onAllNodesWithText(str(R.string.next)).onFirst().performClick()
+        compose.waitDescription(str(R.string.save))
+        waitUntilIdleProgress()
+        compose.onNodeWithContentDescription(str(R.string.save)).performClick()
+        compose.waitText(str(R.string.doc_export_pdf), 60_000)
+        val doc = app.documents.documents.value.single()
+        assertEquals(2, doc.pages.size)
+        // each half of the A4 sheet is close to an A5
+        doc.pages.forEach { assertEquals(1 / kotlin.math.sqrt(2.0), it.width.toDouble() / it.height, 0.06) }
+    }
+
+    /** Folders, selecting several documents, the trash and searching recognised text. */
+    @Test
+    fun foldersSelectionTrashAndSearch() {
+        val a = seedDocument("Tai lieu A")
+        val b = seedDocument("Tai lieu B")
+        runBlocking { app.documents.setOcrText(b, app.documents.get(b)!!.pages[0].id, "hop dong thue nha") }
+        scenario = ActivityScenario.launch(MainActivity::class.java)
+        compose.waitText("Tai lieu A")
+
+        // a new folder; the list then shows that (empty) folder
+        compose.onNodeWithText(str(R.string.home_new_folder)).performClick()
+        compose.waitText(str(R.string.home_folder_name))
+        compose.onNode(hasSetTextAction()).performTextReplacement("Cong viec")
+        compose.onNodeWithText(str(R.string.save)).performClick()
+        compose.waitUntil(10_000) { app.documents.folders.value.size == 1 }
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("Tai lieu A").fetchSemanticsNodes().isEmpty() }
+        compose.onNodeWithText(str(R.string.home_folders_all)).performClick()
+        compose.waitText("Tai lieu A")
+
+        // long press selects; the selection is filed in the folder
+        compose.onNodeWithText("Tai lieu A").performTouchInput { longClick() }
+        compose.waitText(str(R.string.home_selected, 1))
+        compose.onNodeWithContentDescription(str(R.string.home_move_to_folder)).performClick()
+        compose.waitText(str(R.string.home_no_folder))
+        compose.onNode(hasText("Cong viec") and hasAnyAncestor(isDialog())).performClick()
+        val folderId = app.documents.folders.value.single().id
+        compose.waitUntil(10_000) { app.documents.get(a)?.folderId == folderId }
+        compose.onNodeWithText("Cong viec").performClick()
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("Tai lieu B").fetchSemanticsNodes().isEmpty() }
+        compose.onNodeWithText("Tai lieu A").assertExists()
+        shot("29_home_folders")
+
+        // B goes to the trash and comes back
+        compose.onNodeWithText(str(R.string.home_folders_all)).performClick()
+        compose.waitText("Tai lieu B")
+        compose.onNodeWithText("Tai lieu B").performTouchInput { longClick() }
+        compose.waitText(str(R.string.home_selected, 1))
+        compose.onNodeWithContentDescription(str(R.string.delete)).performClick()
+        compose.waitText(str(R.string.home_delete_title))
+        compose.onNode(hasText(str(R.string.delete)) and hasAnyAncestor(isDialog())).performClick()
+        compose.waitUntil(10_000) { app.documents.trash.value.size == 1 && app.documents.documents.value.size == 1 }
+        compose.onNodeWithContentDescription(str(R.string.home_more)).performClick()
+        compose.onNodeWithText(str(R.string.home_trash), substring = true).performClick()
+        compose.waitText(str(R.string.trash_title))
+        compose.waitText("Tai lieu B")
+        shot("30_trash")
+        compose.onNodeWithText(str(R.string.trash_restore)).performClick()
+        compose.waitUntil(10_000) { app.documents.trash.value.isEmpty() && app.documents.documents.value.size == 2 }
+        compose.onNodeWithContentDescription(str(R.string.back)).performClick()
+
+        // search finds the words read on B's page
+        compose.waitText("Tai lieu A")
+        compose.onNode(hasSetTextAction()).performTextReplacement("thue nha")
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("Tai lieu A").fetchSemanticsNodes().isEmpty() }
+        compose.onNodeWithText("Tai lieu B").assertExists()
+    }
+
+    /** A PDF shared to the app becomes one page per PDF page. */
+    @Test
+    fun sharedPdfIsImportedPageByPage() {
+        val pdf = TestImages.samplePdf(File(context.cacheDir, "exports/sample.pdf"), pages = 2)
+        val intent = Intent(context, MainActivity::class.java)
+            .setAction(Intent.ACTION_SEND)
+            .setType("application/pdf")
+            .putExtra(Intent.EXTRA_STREAM, Share.uriFor(context, pdf))
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        scenario = ActivityScenario.launch(intent)
+        compose.waitDescription(str(R.string.crop_editor), 60_000)
+        compose.waitUntil(30_000) { draft(1) != null }
+        assertEquals(null, firstDraft()!!.corners)
+        assertEquals(com.camscaner.app.scanner.ScanFilter.ORIGINAL, firstDraft()!!.filter)
+        compose.onAllNodesWithText(str(R.string.next)).onFirst().performClick()
+        compose.waitDescription(str(R.string.save))
+        waitUntilIdleProgress()
+        compose.onNodeWithContentDescription(str(R.string.save)).performClick()
+        compose.waitText(str(R.string.doc_export_pdf), 60_000)
+        val doc = app.documents.documents.value.single()
+        assertEquals(2, doc.pages.size)
+        // a PDF page keeps its A4 proportions
+        assertEquals(595.0 / 842.0, doc.pages[0].width.toDouble() / doc.pages[0].height, 0.01)
+    }
+
+    /** A text box is typed, placed and saved with the page. */
+    @Test
+    fun textToolAddsWordsToThePage() {
+        val scene = TestImages.documentPhoto(rx = 0.1, ry = 0.05)
+        val file = TestImages.save(scene.bitmap, File(context.cacheDir, "exports/text_test.jpg"))
+        val intent = Intent(context, MainActivity::class.java)
+            .setAction(Intent.ACTION_SEND)
+            .setType("image/jpeg")
+            .putExtra(Intent.EXTRA_STREAM, Share.uriFor(context, file))
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        scenario = ActivityScenario.launch(intent)
+        compose.waitDescription(str(R.string.crop_editor), 30_000)
+        compose.onAllNodesWithText(str(R.string.next)).onFirst().performClick()
+        compose.waitText(str(R.string.filter_original))
+        waitUntilIdleProgress()
+
+        compose.onNodeWithText(str(R.string.markup_text)).performScrollTo().performClick()
+        compose.waitText(str(R.string.text_dialog_title))
+        compose.onNode(hasSetTextAction()).performTextReplacement("DA THANH TOAN")
+        compose.onNodeWithText(str(R.string.ok)).performClick()
+        compose.waitDescription(str(R.string.markup_hint))
+        // dragged a little towards the bottom right, then enlarged with the corner handle
+        compose.onNodeWithContentDescription(str(R.string.markup_hint)).performTouchInput {
+            swipe(center, Offset(center.x + width * 0.1f, center.y + height * 0.15f), 400)
+        }
+        compose.waitForIdle()
+        shot("31_text_box")
+        compose.onNodeWithContentDescription(str(R.string.done)).performClick()
+        compose.waitUntil(5_000) { firstDraft()?.texts?.size == 1 }
+        val text = firstDraft()!!.texts.single()
+        assertEquals("DA THANH TOAN", text.text)
+        assertTrue("text not moved: ${'$'}{text.cx}, ${'$'}{text.cy}", text.cx > 0.55f && text.cy > 0.6f)
+        // turning the page turns the text with it
+        compose.onNodeWithText(str(R.string.crop_rotate_left)).performClick()
+        compose.waitUntil(5_000) { firstDraft()?.texts?.single()?.angle == 270 }
+        waitUntilIdleProgress()
+        compose.onNodeWithContentDescription(str(R.string.save)).performClick()
+        compose.waitText(str(R.string.doc_export_pdf), 60_000)
+        val page = app.documents.documents.value.single().pages.single()
+        assertEquals(1, page.texts.size)
+        assertEquals(270, page.texts[0].angle)
+    }
+
+    /** The export screen also writes text and Word files. */
+    @Test
+    fun exportTextAndWordFiles() {
+        seedDocument("Van ban")
+        scenario = ActivityScenario.launch(MainActivity::class.java)
+        compose.waitText("Van ban")
+        compose.onNodeWithText("Van ban").performClick()
+        compose.waitText(str(R.string.doc_export_pdf))
+        compose.onNodeWithText(str(R.string.doc_export_pdf)).performClick()
+        compose.waitText(str(R.string.export_start))
+        val done = str(R.string.export_file_done, "").substringBefore("(").trim()
+        compose.onNodeWithText(str(R.string.export_txt)).performScrollTo().performClick()
+        compose.waitText(done, 90_000)
+        val txt = File(context.cacheDir, "exports").listFiles()!!.filter { it.extension == "txt" }
+        assertTrue("no txt in ${'$'}{txt.map { it.name }}", txt.isNotEmpty())
+        assertTrue(txt.first().readText().contains("12345"))
+        shot("32_export_txt")
+        compose.onNodeWithText(str(R.string.export_docx)).performScrollTo().performClick()
+        compose.waitUntil(60_000) { File(context.cacheDir, "exports").listFiles()!!.any { it.extension == "docx" && it.length() > 0 } }
+    }
+
+    /** ID card mode collects the two sides of the card before the crop screen. */
+    @Test
+    fun cameraIdCardModeTakesBothSides() {
+        scenario = ActivityScenario.launch(MainActivity::class.java)
+        compose.waitDescription(str(R.string.home_scan))
+        compose.onNodeWithContentDescription(str(R.string.home_scan)).performClick()
+        compose.waitText(str(R.string.camera_mode_id_card))
+        compose.onNodeWithText(str(R.string.camera_mode_id_card)).performClick()
+        waitShutterReady()
+        Thread.sleep(800)
+        shot("33_camera_id_card")
+        compose.onNodeWithContentDescription(str(R.string.camera_capture)).performClick()
+        compose.waitUntil(30_000) { firstDraft() != null }
+        waitShutterReady()
+        compose.onNodeWithContentDescription(str(R.string.camera_capture)).performClick()
+        compose.waitDescription(str(R.string.crop_editor), 30_000)
+        compose.waitUntil(5_000) { draft(1) != null }
+        assertEquals(com.camscaner.app.scanner.PaperPreset.ID_CARD, draft(0)!!.paper)
+        assertEquals(com.camscaner.app.scanner.PaperPreset.ID_CARD, draft(1)!!.paper)
+    }
+
+    /** Book mode makes two pages of every shot. */
+    @Test
+    fun cameraBookModeSplitsEveryShot() {
+        scenario = ActivityScenario.launch(MainActivity::class.java)
+        compose.waitDescription(str(R.string.home_scan))
+        compose.onNodeWithContentDescription(str(R.string.home_scan)).performClick()
+        compose.waitText(str(R.string.camera_mode_book))
+        compose.onNodeWithText(str(R.string.camera_mode_book)).performClick()
+        waitShutterReady()
+        compose.onNodeWithContentDescription(str(R.string.camera_capture)).performClick()
+        compose.waitUntil(30_000) { draft(1) != null }
+        assertEquals(draft(0)!!.originalFile, draft(1)!!.originalFile)
+        shot("34_camera_book")
+        compose.onNodeWithContentDescription(str(R.string.done)).performClick()
+        compose.waitDescription(str(R.string.crop_editor), 30_000)
     }
 }

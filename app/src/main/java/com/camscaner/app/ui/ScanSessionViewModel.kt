@@ -1,7 +1,11 @@
 package com.camscaner.app.ui
 
 import android.app.Application
+import android.graphics.Bitmap
+import android.graphics.Color
+import android.graphics.pdf.PdfRenderer
 import android.net.Uri
+import android.os.ParcelFileDescriptor
 import android.os.SystemClock
 import android.util.Log
 import android.widget.Toast
@@ -35,6 +39,9 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.roundToInt
 
 /**
  * Pages being scanned (camera → crop → filter → save). Lives at activity scope so all
@@ -202,10 +209,12 @@ class ScanSessionViewModel(app: Application, private val state: SavedStateHandle
         }
 
     /**
-     * Imports [uris] independently of the calling screen, so a configuration change cannot cut it
-     * short; [cropReady] tells the navigation to open the crop screen.
+     * Imports [uris] (photos or PDF files) independently of the calling screen, so a configuration
+     * change cannot cut it short; [cropReady] tells the navigation to open the crop screen.
      */
-    fun importImages(uris: List<Uri>) {
+    fun importImages(uris: List<Uri>) = importFiles(uris)
+
+    fun importFiles(uris: List<Uri>) {
         val gen = generation
         viewModelScope.launch {
             val imported = importUris(uris, gen)
@@ -239,7 +248,7 @@ class ScanSessionViewModel(app: Application, private val state: SavedStateHandle
 
     fun consumeCropReady(): Boolean = cropReady.also { cropReady = false }
 
-    /** Returns how many of [uris] could be read as images. */
+    /** Returns how many of [uris] could be read as images or PDF files. */
     private suspend fun importUris(uris: List<Uri>, gen: Int): Int {
         importing = true
         var imported = 0
@@ -250,14 +259,85 @@ class ScanSessionViewModel(app: Application, private val state: SavedStateHandle
                 val copied = withContext(Dispatchers.IO) {
                     runCatching { ImageIO.copyUri(scannerApp, uri, tmp) }.isSuccess
                 }
-                if (!copied) tmp.delete()
-                else if (addPhoto(tmp, gen)) imported++
+                if (!copied) {
+                    tmp.delete()
+                    continue
+                }
+                val ok = if (isPdf(uri, tmp)) importPdf(tmp, gen) > 0 else addPhoto(tmp, gen)
+                if (ok) imported++
             }
             currentIndex = 0
         } finally {
             importing = false
         }
         return imported
+    }
+
+    private fun isPdf(uri: Uri, file: File): Boolean {
+        val type = runCatching { scannerApp.contentResolver.getType(uri) }.getOrNull()
+        if (type == "application/pdf") return true
+        if (type != null && type.startsWith("image/")) return false
+        return runCatching {
+            file.inputStream().use {
+                val head = ByteArray(5)
+                val n = it.read(head)
+                n >= 4 && String(head, 0, 4, Charsets.US_ASCII) == "%PDF"
+            }
+        }.getOrDefault(false)
+    }
+
+    /**
+     * Renders every page of the PDF [file] (at most [MAX_PDF_PAGES]) into a page image and adds
+     * it, uncut and unfiltered. Returns how many pages were added; 0 e.g. for an encrypted file.
+     */
+    private suspend fun importPdf(file: File, gen: Int): Int = withContext(Dispatchers.Default) {
+        var added = 0
+        try {
+            ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
+                PdfRenderer(pfd).use { renderer ->
+                    val count = min(renderer.pageCount, MAX_PDF_PAGES)
+                    for (i in 0 until count) {
+                        if (gen != generation) break
+                        val out = File(workDir, "${DocumentRepository.newId()}.jpg")
+                        val size = renderer.openPage(i).use { page ->
+                            val scale = PDF_RENDER_SIZE.toFloat() / max(page.width, page.height)
+                            val w = (page.width * scale).roundToInt().coerceAtLeast(1)
+                            val h = (page.height * scale).roundToInt().coerceAtLeast(1)
+                            val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+                            try {
+                                bitmap.eraseColor(Color.WHITE)
+                                page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                                ImageIO.saveJpeg(bitmap, out, 92)
+                            } finally {
+                                bitmap.recycle()
+                            }
+                            w to h
+                        }
+                        val draft = DraftPage(
+                            id = DocumentRepository.newId(), originalFile = out, width = size.first, height = size.second,
+                            detected = null, corners = null, filter = ScanFilter.ORIGINAL, skew = 0f,
+                        )
+                        val ok = withContext(Dispatchers.Main) {
+                            if (gen != generation) return@withContext false
+                            pages += draft
+                            currentIndex = pages.lastIndex
+                            true
+                        }
+                        if (!ok) {
+                            out.delete()
+                            break
+                        }
+                        added++
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "PDF import failed", e)
+            withContext(Dispatchers.Main) { Toast.makeText(scannerApp, R.string.import_pdf_failed, Toast.LENGTH_LONG).show() }
+        } finally {
+            file.delete()
+        }
+        added
     }
 
     /** Loads an existing page so its crop or filter can be changed. */
@@ -278,6 +358,7 @@ class ScanSessionViewModel(app: Application, private val state: SavedStateHandle
             adjustments = page.adjustments,
             skew = page.skew,
             marks = page.marks,
+            texts = page.texts,
             paper = page.paper,
             existingPageId = pageId,
         )
@@ -309,7 +390,8 @@ class ScanSessionViewModel(app: Application, private val state: SavedStateHandle
     /** This page with [rotation] (any multiple of 90); its annotations turn along. */
     private fun DraftPage.turnedTo(rotation: Int): DraftPage {
         val r = (rotation % 360 + 360) % 360
-        return if (r == this.rotation) this else copy(rotation = r, marks = marks.map { it.rotated(r - this.rotation) })
+        return if (r == this.rotation) this
+        else copy(rotation = r, marks = marks.map { it.rotated(r - this.rotation) }, texts = texts.map { it.rotated(r - this.rotation) })
     }
 
     fun remove(index: Int) {
@@ -331,8 +413,8 @@ class ScanSessionViewModel(app: Application, private val state: SavedStateHandle
         val (a, b) = PaperFit.split(p.corners ?: p.detected)
         // which half is on the left of the page as the user sees it (the photo may be turned)
         val (first, second) = if (a.rotated(p.rotation).tl.x <= b.rotated(p.rotation).tl.x) a to b else b to a
-        pages[index] = p.copy(corners = first, marks = emptyList())
-        pages.add(index + 1, p.copy(id = DocumentRepository.newId(), corners = second, marks = emptyList(), existingPageId = null))
+        pages[index] = p.copy(corners = first, marks = emptyList(), texts = emptyList())
+        pages.add(index + 1, p.copy(id = DocumentRepository.newId(), corners = second, marks = emptyList(), texts = emptyList(), existingPageId = null))
         currentIndex = index
     }
 
@@ -452,6 +534,9 @@ class ScanSessionViewModel(app: Application, private val state: SavedStateHandle
     private companion object {
         const val KEY_TARGET = "target_doc"
         const val KEY_RETURN = "return_route"
+        const val MAX_PDF_PAGES = 200
+        /** Long side of an imported PDF page in pixels (about 210 dpi for A4). */
+        const val PDF_RENDER_SIZE = 2480
     }
 }
 

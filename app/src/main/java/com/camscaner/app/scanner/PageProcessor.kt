@@ -96,9 +96,10 @@ object PageProcessor {
         skew: Float? = 0f,
         marks: List<MarkStroke> = emptyList(),
         paper: PaperPreset? = null,
+        texts: List<TextMark> = emptyList(),
     ): Bitmap {
         val (straight, _) = PageAligner.straighten(warp(original, corners, maxDim, paper), skew)
-        return MarkupRenderer.draw(enhanceAndRotate(straight, rotation, filter, adjustments), marks)
+        return MarkupRenderer.draw(enhanceAndRotate(straight, rotation, filter, adjustments), marks, texts)
     }
 
     fun render(
@@ -111,6 +112,7 @@ object PageProcessor {
         skew: Float? = 0f,
         marks: List<MarkStroke> = emptyList(),
         paper: PaperPreset? = null,
+        texts: List<TextMark> = emptyList(),
     ): Bitmap {
         val angle = skew ?: autoSkew(originalFile, corners, paper)
         val original = ImageIO.decodeSampled(originalFile, ImageIO.MAX_ORIGINAL)
@@ -122,7 +124,7 @@ object PageProcessor {
             original.recycle()
         }
         val (straight, _) = PageAligner.straighten(warped, angle)
-        return MarkupRenderer.draw(enhanceAndRotate(straight, rotation, filter, adjustments), marks)
+        return MarkupRenderer.draw(enhanceAndRotate(straight, rotation, filter, adjustments), marks, texts)
     }
 
     private fun enhanceAndRotate(warped: Bitmap, rotation: Int, filter: ScanFilter, adjustments: Adjustments): Bitmap {

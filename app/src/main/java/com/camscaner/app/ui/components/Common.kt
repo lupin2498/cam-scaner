@@ -4,17 +4,20 @@ import android.app.Activity
 import android.os.Build
 import android.view.Window
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
@@ -24,6 +27,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -47,11 +51,19 @@ import androidx.core.view.WindowCompat
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.camscaner.app.R
+import com.camscaner.app.data.Folder
+import com.camscaner.app.data.ScanDocument
+import com.camscaner.app.ui.Share
+import com.camscaner.app.ui.theme.LocalDarkTheme
 import java.io.File
+import java.text.DateFormat
+import java.util.Date
 import java.util.WeakHashMap
 
 /** Dark full-bleed screens shown per window; its system bar icons are light while any is. */
-private val darkScreens = WeakHashMap<Window, Int>()
+private val darkScreens = WeakHashMap<Window, Int>().also { map ->
+    com.camscaner.app.ui.theme.darkScreenShown = { window -> (map[window] ?: 0) > 0 }
+}
 
 /**
  * Light status and navigation bar icons while a dark, full-bleed screen (camera, crop, filter,
@@ -60,7 +72,7 @@ private val darkScreens = WeakHashMap<Window, Int>()
 @Composable
 fun LightSystemBarIcons() {
     val view = LocalView.current
-    val darkTheme = isSystemInDarkTheme()
+    val darkTheme = LocalDarkTheme.current
     if (view.isInEditMode) return
     DisposableEffect(view, darkTheme) {
         val window = (view.context as? Activity)?.window ?: return@DisposableEffect onDispose { }
@@ -170,17 +182,23 @@ fun ConfirmDialog(
 }
 
 @Composable
-fun RenameDialog(initial: String, onRename: (String) -> Unit, onDismiss: () -> Unit) {
+fun RenameDialog(
+    initial: String,
+    onRename: (String) -> Unit,
+    onDismiss: () -> Unit,
+    title: String = stringResource(R.string.rename_title),
+    hint: String = stringResource(R.string.rename_hint),
+) {
     var name by remember { mutableStateOf(initial) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.rename_title)) },
+        title = { Text(title) },
         text = {
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
                 singleLine = true,
-                label = { Text(stringResource(R.string.rename_hint)) },
+                label = { Text(hint) },
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -192,6 +210,74 @@ fun RenameDialog(initial: String, onRename: (String) -> Unit, onDismiss: () -> U
             ) { Text(stringResource(R.string.save)) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+    )
+}
+
+/** Picks a folder (or none) for documents; the last entry creates a new one. */
+@Composable
+fun FolderPickerDialog(
+    folders: List<Folder>,
+    current: String?,
+    onPick: (String?) -> Unit,
+    onNewFolder: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var naming by remember { mutableStateOf(false) }
+    if (naming) {
+        RenameDialog(
+            initial = "",
+            title = stringResource(R.string.home_new_folder),
+            hint = stringResource(R.string.home_folder_name),
+            onRename = onNewFolder,
+            onDismiss = { naming = false; onDismiss() },
+        )
+        return
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.home_move_to_folder)) },
+        text = {
+            Column(Modifier.fillMaxWidth().heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
+                FolderChoice(stringResource(R.string.home_no_folder), selected = current == null) { onPick(null) }
+                folders.forEach { f -> FolderChoice(f.name, selected = current == f.id) { onPick(f.id) } }
+                FolderChoice(stringResource(R.string.home_new_folder) + "…", selected = false) { naming = true }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+    )
+}
+
+@Composable
+private fun FolderChoice(label: String, selected: Boolean, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 10.dp, horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(selected = selected, onClick = onClick)
+        Spacer(Modifier.width(8.dp))
+        Text(label, style = MaterialTheme.typography.bodyLarge)
+    }
+}
+
+/** Facts about a document: pages, dates, size, folder, recognised text. */
+@Composable
+fun DocumentDetailsDialog(doc: ScanDocument, size: Long, folderName: String?, onDismiss: () -> Unit) {
+    val format = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(doc.name) },
+        text = {
+            Column {
+                Text(stringResource(R.string.details_pages, doc.pages.size))
+                Text(stringResource(R.string.details_created, format.format(Date(doc.createdAt))))
+                Text(stringResource(R.string.details_updated, format.format(Date(doc.updatedAt))))
+                Text(stringResource(R.string.details_size, Share.formatSize(size)))
+                Text(stringResource(R.string.details_folder, folderName ?: stringResource(R.string.home_no_folder)))
+                Text(stringResource(R.string.details_ocr, doc.pages.count { !it.ocrText.isNullOrBlank() }, doc.pages.size))
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.close)) } },
     )
 }
 
