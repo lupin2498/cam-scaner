@@ -211,7 +211,8 @@ fun FilterScreen(session: ScanSessionViewModel, onBack: () -> Unit, onSaved: (do
 
     Scaffold(
         containerColor = ScreenColor,
-        snackbarHost = { SnackbarHost(snackbar) },
+        // the tool row is part of the content, so the snackbar is lifted above it
+        snackbarHost = { SnackbarHost(snackbar, Modifier.padding(bottom = 84.dp)) },
         topBar = {
             TopAppBar(
                 title = {

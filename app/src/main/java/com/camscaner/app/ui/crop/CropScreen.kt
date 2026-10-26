@@ -113,7 +113,8 @@ fun CropScreen(session: ScanSessionViewModel, onBack: () -> Unit, onNext: () -> 
 
     Scaffold(
         containerColor = Color(0xFF101312),
-        snackbarHost = { SnackbarHost(snackbar) },
+        // the tool row is part of the content, so the snackbar is lifted above it
+        snackbarHost = { SnackbarHost(snackbar, Modifier.padding(bottom = 84.dp)) },
         topBar = {
             TopAppBar(
                 title = {

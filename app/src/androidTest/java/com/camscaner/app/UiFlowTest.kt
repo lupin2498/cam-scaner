@@ -750,6 +750,8 @@ class UiFlowTest {
         compose.waitUntil(5_000) { draft(1) != null }
         assertEquals(draft(0)!!.originalFile, draft(1)!!.originalFile)
         assertTrue(draft(0)!!.corners!!.tr.x <= draft(1)!!.corners!!.tr.x)
+        // the "split" snackbar must be gone before the tool row is tapped
+        compose.waitUntil(10_000) { compose.onAllNodesWithText(str(R.string.crop_split_done)).fetchSemanticsNodes().isEmpty() }
         compose.onAllNodesWithText(str(R.string.next)).onFirst().performClick()
         compose.waitDescription(str(R.string.save))
         waitUntilIdleProgress()
@@ -773,7 +775,7 @@ class UiFlowTest {
         // a new folder; the list then shows that (empty) folder
         compose.onNodeWithText(str(R.string.home_new_folder)).performClick()
         compose.waitText(str(R.string.home_folder_name))
-        compose.onNode(hasSetTextAction()).performTextReplacement("Cong viec")
+        compose.onNode(hasSetTextAction() and hasAnyAncestor(isDialog())).performTextReplacement("Cong viec")
         compose.onNodeWithText(str(R.string.save)).performClick()
         compose.waitUntil(10_000) { app.documents.folders.value.size == 1 }
         compose.waitUntil(5_000) { compose.onAllNodesWithText("Tai lieu A").fetchSemanticsNodes().isEmpty() }

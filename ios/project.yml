@@ -1,0 +1,70 @@
+# XcodeGen spec: `xcodegen generate` writes CamScaner.xcodeproj (the CI does this before building).
+name: CamScaner
+options:
+  bundleIdPrefix: com.camscaner
+  deploymentTarget:
+    iOS: "15.0"
+  xcodeVersion: "15.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    TARGETED_DEVICE_FAMILY: "1,2"
+    CODE_SIGN_STYLE: Manual
+    CODE_SIGN_IDENTITY: ""
+    CODE_SIGNING_REQUIRED: "NO"
+    CODE_SIGNING_ALLOWED: "NO"
+    DEVELOPMENT_TEAM: ""
+    ENABLE_USER_SCRIPT_SANDBOXING: "NO"
+targets:
+  CamScaner:
+    type: application
+    platform: iOS
+    sources:
+      - path: CamScaner
+    info:
+      path: CamScaner/Info.plist
+      properties:
+        CFBundleDisplayName: Cam Scaner
+        CFBundleName: Cam Scaner
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        CFBundleDevelopmentRegion: vi
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        NSCameraUsageDescription: Cam Scaner dùng máy ảnh để quét tài liệu, thẻ và mã QR.
+        NSPhotoLibraryAddUsageDescription: Cam Scaner lưu ảnh trang quét vào thư viện khi bạn chọn.
+        NSPhotoLibraryUsageDescription: Cam Scaner nhập ảnh bạn chọn từ thư viện.
+        NSFaceIDUsageDescription: Dùng Face ID để mở khóa Cam Scaner.
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: PDF
+            LSHandlerRank: Alternate
+            LSItemContentTypes: [com.adobe.pdf]
+          - CFBundleTypeName: Image
+            LSHandlerRank: Alternate
+            LSItemContentTypes: [public.image]
+        ITSAppUsesNonExemptEncryption: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.camscaner.app
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: "YES"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        SWIFT_STRICT_CONCURRENCY: minimal
+schemes:
+  CamScaner:
+    build:
+      targets:
+        CamScaner: all
+    run:
+      config: Debug
+    archive:
+      config: Release
