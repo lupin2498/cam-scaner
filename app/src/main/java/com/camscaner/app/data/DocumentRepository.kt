@@ -87,7 +87,10 @@ class DocumentRepository(context: Context) {
                 }
                 val page = renderPage(
                     id,
-                    ScanPage(pageId, draft.corners, draft.rotation, draft.filter, draft.adjustments, skew = draft.skew, marks = draft.marks)
+                    ScanPage(
+                        pageId, draft.corners, draft.rotation, draft.filter, draft.adjustments,
+                        skew = draft.skew, marks = draft.marks, paper = draft.paper,
+                    )
                 )
                 onProgress(index + 1, drafts.size)
                 page
@@ -159,7 +162,7 @@ class DocumentRepository(context: Context) {
     private fun renderPage(docId: String, page: ScanPage): ScanPage {
         val bitmap = PageProcessor.render(
             originalFile(docId, page.id), page.corners, page.rotation, page.filter, page.adjustments,
-            skew = page.skew, marks = page.marks,
+            skew = page.skew, marks = page.marks, paper = page.paper,
         )
         try {
             ImageIO.saveJpeg(bitmap, pageFile(docId, page.id), 92)

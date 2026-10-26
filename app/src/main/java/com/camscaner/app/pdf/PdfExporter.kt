@@ -53,11 +53,12 @@ class PdfExporter(private val repository: DocumentRepository) {
         output.parentFile?.mkdirs()
         val pages = document.pages
         val sheets = PdfLayout.plan(
-            sizes = pages.map { it.width.coerceAtLeast(1) to it.height.coerceAtLeast(1) },
+            pages = pages.map { PageSize(it.width.coerceAtLeast(1), it.height.coerceAtLeast(1), it.paper) },
             paper = options.paperSize,
             orientation = options.orientation,
             margin = options.margin,
             mergeIdCards = options.mergeIdCards,
+            pagesPerSheet = options.pagesPerSheet,
         )
         // image streams are buffered in a scratch file next to the output instead of the Java heap,
         // so long documents do not run out of memory

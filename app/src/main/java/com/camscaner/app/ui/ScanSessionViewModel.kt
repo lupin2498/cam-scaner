@@ -21,6 +21,8 @@ import com.camscaner.app.ocr.AutoAligner
 import com.camscaner.app.scanner.Corners
 import com.camscaner.app.scanner.DocumentDetector
 import com.camscaner.app.scanner.ImageIO
+import com.camscaner.app.scanner.PaperFit
+import com.camscaner.app.scanner.PaperPreset
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -141,15 +143,18 @@ class ScanSessionViewModel(app: Application, private val state: SavedStateHandle
             return@withContext null
         }
         val detected = if (settings.autoCrop) detect(out) else null
+        // with a paper format chosen in the camera, the region of that format inside the sheet
+        val paper = settings.cameraPaper
         val draft = DraftPage(
             id = DocumentRepository.newId(),
             originalFile = out,
             width = size.first,
             height = size.second,
             detected = detected,
-            corners = detected,
+            corners = if (paper != null) PaperFit.fit(detected, paper, size.first, size.second) else detected,
             filter = settings.defaultFilter,
             skew = if (settings.autoStraighten) null else 0f,
+            paper = paper,
         )
         val added = withContext(Dispatchers.Main) {
             if (gen != generation) return@withContext false
@@ -235,8 +240,25 @@ class ScanSessionViewModel(app: Application, private val state: SavedStateHandle
             adjustments = page.adjustments,
             skew = page.skew,
             marks = page.marks,
+            paper = page.paper,
             existingPageId = pageId,
         )
+    }
+
+    /**
+     * Fits the outline of page [index] to [paper]: the largest region with that format's
+     * proportions inside the detected sheet (or the user's own outline, or the whole photo), and
+     * locks the page to the format. Null frees the outline and brings the detected sheet back.
+     */
+    fun fitPaper(index: Int, paper: PaperPreset?) = update(index) { p ->
+        if (paper == null) {
+            p.copy(corners = p.detected, paper = null)
+        } else {
+            // an outline the user drew by hand counts as the sheet; a fitted one is replaced
+            val own = p.paper == null && p.corners != null && p.corners != p.detected && p.corners != Corners.FULL
+            val base = if (own) p.corners else p.detected
+            p.copy(corners = PaperFit.fit(base, paper, p.width, p.height), paper = paper)
+        }
     }
 
     fun update(index: Int, transform: (DraftPage) -> DraftPage) {
@@ -311,7 +333,11 @@ class ScanSessionViewModel(app: Application, private val state: SavedStateHandle
         val corners = page.detected ?: withContext(Dispatchers.Default) { detect(page.originalFile) }
         // pages may have been removed or reordered while detecting
         val now = pages.indexOfFirst { it.id == page.id }
-        update(now) { it.copy(detected = corners, corners = corners) }
+        update(now) {
+            // a page locked to a paper format gets that format's region inside the sheet found
+            val fitted = it.paper?.let { paper -> PaperFit.fit(corners, paper, it.width, it.height) }
+            it.copy(detected = corners, corners = fitted ?: corners)
+        }
         return corners
     }
 

@@ -51,6 +51,8 @@
     <string name="camera_unavailable">Không mở được camera. Bạn vẫn có thể nhập ảnh từ thư viện.</string>
     <string name="camera_capture">Chụp</string>
     <string name="camera_capture_failed">Chụp ảnh thất bại</string>
+    <string name="camera_paper">Khổ giấy</string>
+    <string name="camera_hint_paper">Đặt tài liệu vào khung %1$s</string>
 
     <!-- Cắt ảnh -->
     <string name="crop_title">Cắt</string>
@@ -62,6 +64,9 @@
     <string name="crop_invalid">Vùng chọn không hợp lệ, hãy kéo các góc thành hình tứ giác lồi</string>
     <string name="crop_page_of">Cắt %1$d/%2$d</string>
     <string name="crop_delete_page">Bỏ trang</string>
+    <string name="crop_paper">Khổ giấy</string>
+    <string name="crop_paper_fitted">Đã chọn vùng theo khổ %1$s</string>
+    <string name="crop_paper_free">Vùng cắt tự do</string>
 
     <!-- Bộ lọc -->
     <string name="filter_title">Làm đẹp ảnh</string>
@@ -140,6 +145,8 @@
     <string name="export_orientation">Hướng trang</string>
     <string name="export_margin">Lề trang</string>
     <string name="export_quality">Chất lượng</string>
+    <string name="export_per_sheet">Số trang trên mỗi tờ</string>
+    <string name="export_per_sheet_n">%1$d trang/tờ</string>
     <string name="export_options">Tùy chọn nâng cao</string>
     <string name="export_ocr_layer">PDF tìm kiếm được (lớp chữ OCR)</string>
     <string name="export_ocr_layer_desc">Có thể tìm kiếm, bôi đen và sao chép chữ trong PDF</string>
@@ -167,6 +174,13 @@
     <string name="paper_b5">B5</string>
     <string name="paper_letter">Letter</string>
     <string name="paper_legal">Legal</string>
+    <string name="paper_a6">A6</string>
+    <string name="paper_id_card">Thẻ CCCD</string>
+    <string name="paper_passport">Hộ chiếu</string>
+    <string name="paper_business_card">Danh thiếp</string>
+    <string name="paper_photo_4x6">Ảnh 10×15</string>
+    <string name="paper_square">Vuông</string>
+    <string name="paper_free">Tự do</string>
 
     <string name="orientation_auto">Tự động</string>
     <string name="orientation_portrait">Dọc</string>

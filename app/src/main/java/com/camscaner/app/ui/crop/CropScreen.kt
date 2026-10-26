@@ -4,6 +4,8 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,6 +32,8 @@ import androidx.compose.material.icons.filled.Rotate90DegreesCw
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -59,6 +63,7 @@ import coil.compose.AsyncImage
 import com.camscaner.app.R
 import com.camscaner.app.scanner.Corners
 import com.camscaner.app.scanner.ImageIO
+import com.camscaner.app.scanner.PaperPreset
 import com.camscaner.app.scanner.rotated
 import com.camscaner.app.ui.ScanSessionViewModel
 import com.camscaner.app.ui.components.BackButton
@@ -149,6 +154,25 @@ fun CropScreen(session: ScanSessionViewModel, onBack: () -> Unit, onNext: () -> 
                 }
             }
 
+            // paper formats: the outline is fitted to the chosen one inside the detected sheet and
+            // the page comes out with exactly its proportions
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp, vertical = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    stringResource(R.string.crop_paper),
+                    color = Color.White.copy(alpha = 0.8f),
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.padding(end = 4.dp),
+                )
+                PaperChip(stringResource(R.string.paper_free), page.paper == null) { session.fitPaper(index, null) }
+                PaperPreset.entries.forEach { p ->
+                    PaperChip(stringResource(p.label), page.paper == p) { session.fitPaper(index, p) }
+                }
+            }
+
             if (pages.size > 1) {
                 // page arrows live beside the strip: over the photo they would cover the edge handles
                 Row(Modifier.fillMaxWidth().height(72.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -207,6 +231,23 @@ fun CropScreen(session: ScanSessionViewModel, onBack: () -> Unit, onNext: () -> 
             }
         }
     }
+}
+
+/** A paper format of the crop screen's strip. */
+@Composable
+private fun PaperChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        label = { Text(label) },
+        colors = FilterChipDefaults.filterChipColors(
+            containerColor = Color(0xFF2A302E),
+            labelColor = Color.White,
+            selectedContainerColor = MaterialTheme.colorScheme.primary,
+            selectedLabelColor = Color.White,
+        ),
+        border = null,
+    )
 }
 
 @Composable

@@ -80,7 +80,7 @@ class FilterViewModel : ViewModel() {
     private var originalBitmap: Bitmap? = null
 
     fun render(page: DraftPage) {
-        val baseKey = "${page.id}|${page.originalFile.absolutePath}|${page.corners}|${page.rotation}|${page.skew}"
+        val baseKey = "${page.id}|${page.originalFile.absolutePath}|${page.corners}|${page.paper}|${page.rotation}|${page.skew}"
         val filterKey = "$baseKey|${page.filter}|${page.adjustments}"
         // marks can hold thousands of points; their hash identifies them without a huge string
         val key = "$filterKey|${page.marks.size}|${page.marks.hashCode()}"
@@ -120,7 +120,7 @@ class FilterViewModel : ViewModel() {
 
     private suspend fun renderLocked(page: DraftPage, baseKey: String, filterKey: String): Rendered {
         val angle = angleFor(page)
-        val straightened = "${page.originalFile.absolutePath}|${page.corners}|$angle"
+        val straightened = "${page.originalFile.absolutePath}|${page.corners}|${page.paper}|$angle"
         val level = straight?.takeIf { straightKey == straightened } ?: run {
             // the cached warp is shared: rotate() returns it unchanged when there is nothing to do
             val warped = warped(page, PREVIEW_SIZE)
@@ -158,7 +158,7 @@ class FilterViewModel : ViewModel() {
     private fun withMarks(bitmap: Bitmap, page: DraftPage): Bitmap = MarkupRenderer.draw(bitmap, page.marks)
 
     fun renderThumbnails(page: DraftPage) {
-        val key = "${page.id}|${page.corners}|${page.rotation}|${page.skew}"
+        val key = "${page.id}|${page.corners}|${page.paper}|${page.rotation}|${page.skew}"
         // filters, strength and marks do not change the thumbnails: a running render is kept
         if (key == thumbsJobKey && thumbsJob?.isActive == true) return
         thumbsJob?.cancel()
@@ -203,7 +203,7 @@ class FilterViewModel : ViewModel() {
                 withContext(Dispatchers.Default) {
                     val bitmap = PageProcessor.render(
                         page.originalFile, page.corners, page.rotation, page.filter, page.adjustments,
-                        OCR_SIZE, skew = angleFor(page),
+                        OCR_SIZE, skew = angleFor(page), paper = page.paper,
                     )
                     try {
                         OcrEngine.recognize(bitmap).text
@@ -233,7 +233,7 @@ class FilterViewModel : ViewModel() {
      */
     private suspend fun angleFor(page: DraftPage): Float {
         page.skew?.let { return it }
-        val key = "${page.originalFile.absolutePath}|${page.corners}"
+        val key = "${page.originalFile.absolutePath}|${page.corners}|${page.paper}"
         cacheLock.withLock {
             autoSkews[key]?.let { return it }
         }
@@ -243,13 +243,13 @@ class FilterViewModel : ViewModel() {
     }
 
     private suspend fun warped(page: DraftPage, size: Int): Bitmap {
-        val key = "${page.originalFile.absolutePath}|${page.corners}|$size"
+        val key = "${page.originalFile.absolutePath}|${page.corners}|${page.paper}|$size"
         cacheLock.withLock {
             warpCache[key]?.let { return it }
         }
         val original = ImageIO.decodeSampled(page.originalFile, (size * 1.25f).toInt())
             ?: error("Cannot decode page")
-        val warped = PageProcessor.warp(original, page.corners, size)
+        val warped = PageProcessor.warp(original, page.corners, size, page.paper)
         original.recycle()
         cacheLock.withLock {
             warpCache[key] = warped

@@ -3,6 +3,7 @@ package com.camscaner.app.data
 import com.camscaner.app.scanner.Adjustments
 import com.camscaner.app.scanner.Corners
 import com.camscaner.app.scanner.MarkStroke
+import com.camscaner.app.scanner.PaperPreset
 import com.camscaner.app.scanner.ScanFilter
 import org.json.JSONArray
 import org.json.JSONObject
@@ -19,6 +20,8 @@ data class ScanPage(
     val skew: Float? = 0f,
     /** Annotations and signatures drawn on the finished page. */
     val marks: List<MarkStroke> = emptyList(),
+    /** Paper format the page was cut to; the corrected page gets exactly its proportions. Null measures them. */
+    val paper: PaperPreset? = null,
     /** Size of the rendered page image in pixels. */
     val width: Int = 0,
     val height: Int = 0,
@@ -27,6 +30,7 @@ data class ScanPage(
     fun toJson(): JSONObject = JSONObject().apply {
         put("id", id)
         corners?.let { c -> put("corners", JSONArray().apply { c.toFloatArray().forEach { put(it.toDouble()) } }) }
+        paper?.let { put("paper", it.name) }
         put("rotation", rotation)
         put("filter", filter.key)
         put("brightness", adjustments.brightness.toDouble())
@@ -57,6 +61,7 @@ data class ScanPage(
                     strength = o.optDouble("strength", 1.0).toFloat(),
                 ),
                 marks = MarkStroke.listFromJson(o.optJSONArray("marks")),
+                paper = PaperPreset.fromName(o.optString("paper", null)),
                 // pages saved before straightening existed keep their look
                 skew = if (o.optBoolean("skewAuto", false)) null else o.optDouble("skew", 0.0).toFloat(),
                 width = o.optInt("width", 0),
@@ -113,6 +118,8 @@ data class DraftPage(
     val skew: Float? = null,
     /** Annotations and signatures drawn on the finished page. */
     val marks: List<MarkStroke> = emptyList(),
+    /** Paper format the outline was fitted to; the page gets exactly its proportions. Null measures them. */
+    val paper: PaperPreset? = null,
     /** Set when re-editing a page that already belongs to a document. */
     val existingPageId: String? = null,
 )

@@ -1,5 +1,6 @@
 package com.camscaner.app.pdf
 
+import com.camscaner.app.scanner.PaperPreset
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -14,7 +15,8 @@ class PdfLayoutTest {
         orientation: PageOrientation = PageOrientation.AUTO,
         margin: PageMargin = PageMargin.NONE,
         mergeIdCards: Boolean = true,
-    ) = PdfLayout.plan(sizes, paper, orientation, margin, mergeIdCards)
+        pagesPerSheet: Int = 1,
+    ) = PdfLayout.plan(sizes, paper, orientation, margin, mergeIdCards, pagesPerSheet)
 
     @Test
     fun paperIsRecognisedFromRatio() {
@@ -100,5 +102,66 @@ class PdfLayoutTest {
     fun idCardsAreNotMergedWhenDisabled() {
         val card = 1712 to 1080
         assertEquals(2, plan(listOf(card, card), mergeIdCards = false).size)
+    }
+
+    @Test
+    fun pageCutToA5IsPrintedOnAnA5Sheet() {
+        val s = PdfLayout.plan(listOf(PageSize(1480, 2100, PaperPreset.A5)), PaperSize.AUTO, PageOrientation.AUTO, PageMargin.NONE, true).single()
+        assertEquals(PaperPreset.A5.widthPt, s.width, 0.01f)
+        assertEquals(PaperPreset.A5.heightPt, s.height, 0.01f)
+        val p = s.items.single()
+        assertEquals(s.width, p.width, 0.01f)
+        assertEquals(s.height, p.height, 0.01f)
+        // a fixed paper size still wins over the format the page was cut to
+        val letter = PdfLayout.plan(listOf(PageSize(1480, 2100, PaperPreset.A5)), PaperSize.LETTER, PageOrientation.AUTO, PageMargin.NONE, true).single()
+        assertEquals(612f, letter.width, 0.01f)
+    }
+
+    @Test
+    fun cardsOfKnownFormatsArePrintedAtRealSize() {
+        val passport = PageSize(1250, 880, PaperPreset.PASSPORT)
+        val merged = PdfLayout.plan(listOf(passport, passport), PaperSize.AUTO, PageOrientation.AUTO, PageMargin.NONE, true)
+        assertEquals(1, merged.size)
+        assertEquals(2, merged[0].items.size)
+        merged[0].items.forEach {
+            assertEquals(125f * PaperPreset.PT_PER_MM, it.width, 0.01f)
+            assertEquals(88f * PaperPreset.PT_PER_MM, it.height, 0.01f)
+        }
+        // a business card held upright is printed upright, alone on its page
+        val card = PdfLayout.plan(listOf(PageSize(550, 900, PaperPreset.BUSINESS_CARD)), PaperSize.AUTO, PageOrientation.AUTO, PageMargin.NONE, false).single()
+        val p = card.items.single()
+        assertEquals(55f * PaperPreset.PT_PER_MM, p.width, 0.01f)
+        assertEquals(90f * PaperPreset.PT_PER_MM, p.height, 0.01f)
+        assertEquals(595.28f, card.width, 0.01f)
+    }
+
+    @Test
+    fun twoPagesPerSheetLieSideBySideOnALandscapeSheet() {
+        val a = 2480 to 3508
+        val sheets = plan(listOf(a, a, a), pagesPerSheet = 2)
+        assertEquals(2, sheets.size)
+        val first = sheets[0]
+        assertEquals(841.89f, first.width, 0.01f)
+        assertEquals(595.28f, first.height, 0.01f)
+        assertEquals(2, first.items.size)
+        val (l, r) = first.items
+        assertTrue("cells overlap", l.x + l.width <= r.x + 0.01f)
+        assertEquals(l.y, r.y, 0.01f)
+        assertEquals(2480f / 3508f, l.width / l.height, 0.002f)
+        assertEquals(1, sheets[1].items.size)
+        assertEquals(2, sheets[1].items.single().index)
+    }
+
+    @Test
+    fun fourPagesPerSheetFillAGridOnAPortraitSheet() {
+        val a = 2480 to 3508
+        val sheet = plan(listOf(a, a, a, a), paper = PaperSize.LETTER, pagesPerSheet = 4).single()
+        assertEquals(612f, sheet.width, 0.01f)
+        assertEquals(4, sheet.items.size)
+        val xs = sheet.items.map { it.x }.distinct()
+        val ys = sheet.items.map { it.y }.distinct()
+        assertEquals(2, xs.size)
+        assertEquals(2, ys.size)
+        sheet.items.forEach { assertTrue(it.x >= 0f && it.y >= 0f && it.x + it.width <= 612f && it.y + it.height <= 792f) }
     }
 }

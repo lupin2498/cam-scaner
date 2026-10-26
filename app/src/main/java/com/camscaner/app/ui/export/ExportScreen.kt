@@ -75,6 +75,7 @@ import com.camscaner.app.ScannerApp
 import com.camscaner.app.data.ScanDocument
 import com.camscaner.app.pdf.PageMargin
 import com.camscaner.app.pdf.PageOrientation
+import com.camscaner.app.pdf.PageSize
 import com.camscaner.app.pdf.PaperSize
 import com.camscaner.app.pdf.PdfLayout
 import com.camscaner.app.pdf.PdfOptions
@@ -244,6 +245,17 @@ fun ExportScreen(onBack: () -> Unit) {
                 }
             }
 
+            SectionTitle(stringResource(R.string.export_per_sheet))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(1, 2, 4).forEach { n ->
+                    FilterChip(
+                        selected = o.pagesPerSheet == n,
+                        onClick = { update { it.copy(pagesPerSheet = n) } },
+                        label = { Text(stringResource(R.string.export_per_sheet_n, n)) },
+                    )
+                }
+            }
+
             SectionTitle(stringResource(R.string.export_options))
             SwitchRow(stringResource(R.string.export_ocr_layer), stringResource(R.string.export_ocr_layer_desc), o.ocrLayer) { v ->
                 update { it.copy(ocrLayer = v) }
@@ -355,10 +367,10 @@ private fun SwitchRow(title: String, subtitle: String?, checked: Boolean, onChan
 /** Miniature of the first PDF pages so the effect of paper size / margins is visible. */
 @Composable
 private fun LayoutPreview(doc: ScanDocument, o: PdfOptions, vm: ExportViewModel) {
-    val sheets = remember(doc.pages, o.paperSize, o.orientation, o.margin, o.mergeIdCards) {
+    val sheets = remember(doc.pages, o.paperSize, o.orientation, o.margin, o.mergeIdCards, o.pagesPerSheet) {
         PdfLayout.plan(
-            doc.pages.map { it.width.coerceAtLeast(1) to it.height.coerceAtLeast(1) },
-            o.paperSize, o.orientation, o.margin, o.mergeIdCards,
+            doc.pages.map { PageSize(it.width.coerceAtLeast(1), it.height.coerceAtLeast(1), it.paper) },
+            o.paperSize, o.orientation, o.margin, o.mergeIdCards, o.pagesPerSheet,
         )
     }
     Column(Modifier.padding(top = 12.dp)) {

@@ -97,6 +97,11 @@ dependencies {
     implementation(libs.opencv)
     implementation(libs.pdfbox.android)
     implementation(libs.mlkit.text.recognition)
+    implementation(libs.mlkit.barcode.scanning)
+    implementation(libs.mlkit.translate)
+    implementation(libs.mlkit.face.detection)
+    implementation(libs.mlkit.segmentation.selfie)
+    implementation(libs.androidx.biometric)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)

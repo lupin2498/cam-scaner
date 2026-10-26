@@ -23,18 +23,18 @@ object PageProcessor {
     const val MEASURE_WARP = 1400
 
     /** Decodes [originalFile] the way previews do and warps it to [size] for measuring. */
-    fun measureWarp(originalFile: File, corners: Corners?, size: Int = MEASURE_WARP): Bitmap? {
+    fun measureWarp(originalFile: File, corners: Corners?, size: Int = MEASURE_WARP, paper: PaperPreset? = null): Bitmap? {
         val original = ImageIO.decodeSampled(originalFile, size * 5 / 4) ?: return null
         return try {
-            warp(original, corners, size)
+            warp(original, corners, size, paper)
         } finally {
             original.recycle()
         }
     }
 
     /** Automatic straightening angle (clockwise degrees) of a page, 0 when none is needed. */
-    fun autoSkew(originalFile: File, corners: Corners?): Float {
-        val warped = measureWarp(originalFile, corners) ?: return 0f
+    fun autoSkew(originalFile: File, corners: Corners?, paper: PaperPreset? = null): Float {
+        val warped = measureWarp(originalFile, corners, paper = paper) ?: return 0f
         return try {
             PageAligner.autoCorrection(warped)
         } finally {
@@ -45,9 +45,10 @@ object PageProcessor {
     /**
      * Perspective-corrects [original] (upright) using normalized [corners].
      * The output aspect ratio is the real one of the sheet, snapped to a standard paper size
-     * (A-series, Letter, Legal, ID card) when it is close enough.
+     * (A-series, Letter, Legal, ID card) when it is close enough; with a [paper] format chosen
+     * by the user the page gets exactly that format's proportions.
      */
-    fun warp(original: Bitmap, corners: Corners?, maxDim: Int = MAX_PAGE): Bitmap {
+    fun warp(original: Bitmap, corners: Corners?, maxDim: Int = MAX_PAGE, paper: PaperPreset? = null): Bitmap {
         val w = original.width
         val h = original.height
         if (corners == null || corners == Corners.FULL) {
@@ -55,7 +56,8 @@ object PageProcessor {
             return ImageIO.scaleDown(copy, maxDim)
         }
         val px = corners.scaled(w.toFloat(), h.toFloat())
-        val ratio = PaperSize.snapRatio(estimateAspectRatio(px, w, h))
+        val estimated = estimateAspectRatio(px, w, h)
+        val ratio = paper?.ratioFor(estimated) ?: PaperSize.snapRatio(estimated)
         val (outW, outH) = correctedSize(px, ratio, maxDim)
         return withMats {
             val src = mat()
@@ -93,8 +95,9 @@ object PageProcessor {
         maxDim: Int = MAX_PAGE,
         skew: Float? = 0f,
         marks: List<MarkStroke> = emptyList(),
+        paper: PaperPreset? = null,
     ): Bitmap {
-        val (straight, _) = PageAligner.straighten(warp(original, corners, maxDim), skew)
+        val (straight, _) = PageAligner.straighten(warp(original, corners, maxDim, paper), skew)
         return MarkupRenderer.draw(enhanceAndRotate(straight, rotation, filter, adjustments), marks)
     }
 
@@ -107,13 +110,14 @@ object PageProcessor {
         maxDim: Int = MAX_PAGE,
         skew: Float? = 0f,
         marks: List<MarkStroke> = emptyList(),
+        paper: PaperPreset? = null,
     ): Bitmap {
-        val angle = skew ?: autoSkew(originalFile, corners)
+        val angle = skew ?: autoSkew(originalFile, corners, paper)
         val original = ImageIO.decodeSampled(originalFile, ImageIO.MAX_ORIGINAL)
             ?: error("Cannot decode ${originalFile.name}")
         // the full-size original is released before enhancement, which needs most of the memory
         val warped = try {
-            warp(original, corners, maxDim)
+            warp(original, corners, maxDim, paper)
         } finally {
             original.recycle()
         }

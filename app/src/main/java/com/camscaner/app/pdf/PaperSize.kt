@@ -92,4 +92,6 @@ data class PdfOptions(
     val pageNumbers: Boolean = false,
     val password: String = "",
     val watermark: String = "",
+    /** 1, 2 or 4 pages printed on each sheet. */
+    val pagesPerSheet: Int = 1,
 )

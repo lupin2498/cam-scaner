@@ -58,6 +58,8 @@ import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -78,6 +80,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -98,6 +101,8 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import coil.compose.AsyncImage
 import com.camscaner.app.R
+import com.camscaner.app.scanner.PaperFit
+import com.camscaner.app.scanner.PaperPreset
 import com.camscaner.app.scannerApp
 import com.camscaner.app.ui.ScanSessionViewModel
 import com.camscaner.app.ui.components.ConfirmDialog
@@ -340,6 +345,10 @@ private fun CameraContent(session: ScanSessionViewModel, onClose: () -> Unit, on
         if (uris.isNotEmpty()) session.importImages(uris)
     }
 
+    // paper format new photos are cut to: a guide frame on the preview, and the region of that
+    // format inside the detected sheet is outlined instead of the sheet itself
+    val paper = settings.cameraPaper
+
     Box(Modifier.fillMaxSize()) {
         AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
         if (cameraFailed) {
@@ -368,7 +377,22 @@ private fun CameraContent(session: ScanSessionViewModel, onClose: () -> Unit, on
                     drawLine(Color.White.copy(alpha = 0.35f), Offset(left, y), Offset(left + dw, y), 1.dp.toPx())
                 }
             }
-            val corners = d?.corners ?: return@Canvas
+            if (paper != null) {
+                val g = PaperFit.guide(paper, dw, dh)
+                val gp = g.points.map { Offset(left + it.x * dw, top + it.y * dh) }
+                val guidePath = Path().apply {
+                    moveTo(gp[0].x, gp[0].y)
+                    for (i in 1 until 4) lineTo(gp[i].x, gp[i].y)
+                    close()
+                }
+                drawPath(
+                    guidePath, Color.White.copy(alpha = 0.85f),
+                    style = Stroke(width = 2.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(14.dp.toPx(), 8.dp.toPx()))),
+                )
+            }
+            val frame = d ?: return@Canvas
+            val found = frame.corners ?: return@Canvas
+            val corners = if (paper != null) PaperFit.fit(found, paper, frame.frameWidth, frame.frameHeight) else found
             val pts = corners.points.map { Offset(left + it.x * dw, top + it.y * dh) }
             val path = Path().apply {
                 moveTo(pts[0].x, pts[0].y)
@@ -415,9 +439,10 @@ private fun CameraContent(session: ScanSessionViewModel, onClose: () -> Unit, on
 
         // Hint
         val hint = when {
-            detection?.corners == null -> R.string.camera_hint_searching
-            holdProgress > 0f && settings.autoCapture -> R.string.camera_hint_hold
-            else -> R.string.camera_hint_found
+            detection?.corners == null && paper != null -> stringResource(R.string.camera_hint_paper, stringResource(paper.label))
+            detection?.corners == null -> stringResource(R.string.camera_hint_searching)
+            holdProgress > 0f && settings.autoCapture -> stringResource(R.string.camera_hint_hold)
+            else -> stringResource(R.string.camera_hint_found)
         }
         Surface(
             color = Color.Black.copy(alpha = 0.55f),
@@ -425,7 +450,7 @@ private fun CameraContent(session: ScanSessionViewModel, onClose: () -> Unit, on
             modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 64.dp),
         ) {
             Text(
-                stringResource(hint),
+                hint,
                 color = Color.White,
                 style = MaterialTheme.typography.labelLarge,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
@@ -442,6 +467,7 @@ private fun CameraContent(session: ScanSessionViewModel, onClose: () -> Unit, on
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ModeChip(stringResource(R.string.camera_mode_single), !settings.batchMode) { settings.batchMode = false }
                 ModeChip(stringResource(R.string.camera_mode_batch), settings.batchMode) { settings.batchMode = true }
+                PaperMenuChip(paper) { settings.cameraPaper = it }
             }
             Spacer(Modifier.height(12.dp))
             Row(
@@ -504,6 +530,21 @@ private fun ModeChip(label: String, selected: Boolean, onClick: () -> Unit) {
             style = MaterialTheme.typography.labelLarge,
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
         )
+    }
+}
+
+/** Chip naming the paper format new photos are cut to; tapping it offers the formats. */
+@Composable
+private fun PaperMenuChip(paper: PaperPreset?, onSelect: (PaperPreset?) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        ModeChip(paper?.let { stringResource(it.label) } ?: stringResource(R.string.camera_paper), paper != null) { open = true }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            DropdownMenuItem(text = { Text(stringResource(R.string.paper_free)) }, onClick = { onSelect(null); open = false })
+            PaperPreset.entries.forEach { p ->
+                DropdownMenuItem(text = { Text(stringResource(p.label)) }, onClick = { onSelect(p); open = false })
+            }
+        }
     }
 }
 

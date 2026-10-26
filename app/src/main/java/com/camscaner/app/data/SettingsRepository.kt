@@ -10,6 +10,7 @@ import com.camscaner.app.pdf.PageOrientation
 import com.camscaner.app.pdf.PaperSize
 import com.camscaner.app.pdf.PdfOptions
 import com.camscaner.app.pdf.PdfQuality
+import com.camscaner.app.scanner.PaperPreset
 import com.camscaner.app.scanner.ScanFilter
 
 /** User preferences backed by SharedPreferences and exposed as Compose state. */
@@ -66,6 +67,15 @@ class SettingsRepository(context: Context) {
             prefs.edit { putBoolean(KEY_AUTO_ALIGN, value) }
         }
 
+    private var _cameraPaper by mutableStateOf(PaperPreset.fromName(prefs.getString(KEY_CAMERA_PAPER, null)))
+    /** Paper format new photos are cut to (a guide frame is shown in the camera); null detects the sheet freely. */
+    var cameraPaper: PaperPreset?
+        get() = _cameraPaper
+        set(value) {
+            _cameraPaper = value
+            prefs.edit { putString(KEY_CAMERA_PAPER, value?.name) }
+        }
+
     private var _autoStraighten by mutableStateOf(prefs.getBoolean(KEY_AUTO_STRAIGHTEN, true))
     /** Level the text lines of new pages automatically. */
     var autoStraighten: Boolean
@@ -86,6 +96,7 @@ class SettingsRepository(context: Context) {
         mergeIdCards = prefs.getBoolean(KEY_PDF_ID, false),
         pageNumbers = prefs.getBoolean(KEY_PDF_NUMBERS, false),
         watermark = prefs.getString(KEY_PDF_WATERMARK, "").orEmpty(),
+        pagesPerSheet = prefs.getInt(KEY_PDF_PER_SHEET, 1).let { if (it == 2 || it == 4) it else 1 },
     )
 
     fun savePdfOptions(o: PdfOptions) = prefs.edit {
@@ -97,6 +108,7 @@ class SettingsRepository(context: Context) {
         putBoolean(KEY_PDF_ID, o.mergeIdCards)
         putBoolean(KEY_PDF_NUMBERS, o.pageNumbers)
         putString(KEY_PDF_WATERMARK, o.watermark)
+        putInt(KEY_PDF_PER_SHEET, o.pagesPerSheet)
     }
 
     private inline fun <reified E : Enum<E>> enumOr(name: String?, default: E): E =
@@ -118,5 +130,7 @@ class SettingsRepository(context: Context) {
         const val KEY_AUTO_STRAIGHTEN = "auto_straighten"
         const val KEY_PDF_NUMBERS = "pdf_page_numbers"
         const val KEY_PDF_WATERMARK = "pdf_watermark"
+        const val KEY_CAMERA_PAPER = "camera_paper"
+        const val KEY_PDF_PER_SHEET = "pdf_per_sheet"
     }
 }
