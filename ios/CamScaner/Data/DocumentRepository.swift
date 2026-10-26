@@ -126,12 +126,13 @@ final class DocumentRepository: ObservableObject {
         let pageURL = pageURL(docId, page.id)
         let thumbURL = thumbURL(docId, page.id)
         let input = page
+        let thumbSize = DocumentRepository.thumbSize
         let result: (Int, Int) = try await Task.detached(priority: .userInitiated) {
             guard let image = UIImage(contentsOfFile: original.path) else { throw CocoaError(.fileReadCorruptFile) }
             let rendered = PageProcessor.render(image, page: input)
             guard let jpeg = rendered.jpegData(compressionQuality: 0.92) else { throw CocoaError(.fileWriteUnknown) }
             try jpeg.write(to: pageURL, options: .atomic)
-            let thumb = rendered.scaledDown(maxDim: DocumentRepository.thumbSize)
+            let thumb = rendered.scaledDown(maxDim: thumbSize)
             try thumb.jpegData(compressionQuality: 0.82)?.write(to: thumbURL, options: .atomic)
             return (Int(rendered.size.width * rendered.scale), Int(rendered.size.height * rendered.scale))
         }.value

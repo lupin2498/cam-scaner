@@ -24,7 +24,7 @@ enum PdfExporter {
                 }
             }
         }
-        let data = try await Task.detached(priority: .userInitiated) { () -> Data in
+        let data = await Task.detached(priority: .userInitiated) { () -> Data in
             let format = UIGraphicsPDFRendererFormat()
             format.documentInfo = [kCGPDFContextTitle as String: name, kCGPDFContextCreator as String: "Cam Scaner"]
             let renderer = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 595.28, height: 841.89), format: format)

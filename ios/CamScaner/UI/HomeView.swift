@@ -194,18 +194,16 @@ struct HomeView: View {
 
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
-        if selecting {
-            ToolbarItem(placement: .navigationBarLeading) {
-                Button("Bỏ chọn") { selecting = false; selection = [] }
-            }
-            ToolbarItemGroup(placement: .navigationBarTrailing) {
+        ToolbarItem(placement: .navigationBarLeading) {
+            if selecting { Button("Bỏ chọn") { selecting = false; selection = [] } }
+        }
+        ToolbarItemGroup(placement: .navigationBarTrailing) {
+            if selecting {
                 Button { selection = Set(filtered.map(\.id)) } label: { Image(systemName: "checkmark.circle") }
                 Button { movingIds = Array(selection) } label: { Image(systemName: "folder") }.disabled(selection.isEmpty)
                 Button { confirmMerge = true } label: { Image(systemName: "arrow.triangle.merge") }.disabled(selection.count < 2)
                 Button(role: .destructive) { confirmDeleteSelected = true } label: { Image(systemName: "trash") }.disabled(selection.isEmpty)
-            }
-        } else {
-            ToolbarItem(placement: .navigationBarTrailing) {
+            } else {
                 Menu {
                     Picker("Sắp xếp", selection: Binding(get: { settings.sortOrder }, set: { settings.sortOrder = $0 })) {
                         ForEach(SortOrder.allCases) { Text($0.label).tag($0) }

@@ -183,9 +183,11 @@ struct DocumentView: View {
 
     @ToolbarContentBuilder
     private func toolbar(_ doc: ScanDocument) -> some ToolbarContent {
-        if selecting {
-            ToolbarItem(placement: .navigationBarLeading) { Button("Bỏ chọn") { selecting = false; selection = [] } }
-            ToolbarItemGroup(placement: .navigationBarTrailing) {
+        ToolbarItem(placement: .navigationBarLeading) {
+            if selecting { Button("Bỏ chọn") { selecting = false; selection = [] } }
+        }
+        ToolbarItemGroup(placement: .navigationBarTrailing) {
+            if selecting {
                 Button { selection = Set(doc.pages.map(\.id)) } label: { Image(systemName: "checkmark.circle") }
                 Menu {
                     Button { rotateSelected(doc) } label: { Label("Xoay trang đã chọn", systemImage: "rotate.right") }
@@ -194,9 +196,7 @@ struct DocumentView: View {
                     Button { transfer = .copy } label: { Label("Sao chép sang tài liệu khác", systemImage: "doc.on.doc") }
                     Button(role: .destructive) { confirmDeletePages = true } label: { Label("Xóa trang đã chọn", systemImage: "trash") }
                 } label: { Image(systemName: "ellipsis.circle") }.disabled(selection.isEmpty)
-            }
-        } else {
-            ToolbarItemGroup(placement: .navigationBarTrailing) {
+            } else {
                 Button(editMode ? "Xong" : "Sửa") { editMode.toggle() }
                 Menu {
                     Button { renaming = true } label: { Label("Đổi tên", systemImage: "pencil") }

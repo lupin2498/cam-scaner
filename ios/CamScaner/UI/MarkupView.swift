@@ -127,52 +127,22 @@ struct MarkupView: View {
 
     private func canvas(in available: CGSize) -> some View {
         let lay = layout(in: available)
+        let drag = DragGesture(minimumDistance: 0)
+            .onChanged { v in dragChanged(v, lay: lay) }
+            .onEnded { v in dragEnded(v, lay: lay) }
+        let magnify = MagnificationGesture()
+            .onChanged { v in pinch(v, lay: lay) }
+            .onEnded { _ in pinchStart = nil }
+        let live: MarkStroke? = current.count >= 2 ? stroke(current) : nil
         return ZStack {
             Image(uiImage: image).resizable().frame(width: lay.size.width, height: lay.size.height)
-            Canvas { ctx, size in
-                var all = marks
-                if current.count >= 2 { all.append(stroke(current)) }
-                for m in all where m.points.count >= 2 {
-                    let path = Path(PageProcessor.strokePath(m.points, width: size.width, height: size.height))
-                    let lineWidth = max(1, CGFloat(m.width) * sqrt(size.width * size.height))
-                    if m.highlighter {
-                        var hctx = ctx
-                        hctx.blendMode = .multiply
-                        hctx.opacity = 110.0 / 255.0
-                        hctx.stroke(path, with: .color(Color(m.color.cgColor)), style: StrokeStyle(lineWidth: lineWidth, lineCap: .square, lineJoin: .round))
-                    } else {
-                        ctx.stroke(path, with: .color(Color(m.color.cgColor)), style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round))
-                    }
-                }
-                if let group = placing {
-                    let pts = marks.filter { $0.group == group }.flatMap { m in (0..<(m.points.count / 2)).map { CGPoint(x: m.points[2 * $0] * size.width, y: m.points[2 * $0 + 1] * size.height) } }
-                    if let minX = pts.map(\.x).min(), let maxX = pts.map(\.x).max(), let minY = pts.map(\.y).min(), let maxY = pts.map(\.y).max() {
-                        let box = CGRect(x: minX - 8, y: minY - 8, width: maxX - minX + 16, height: maxY - minY + 16)
-                        ctx.stroke(Path(roundedRect: box, cornerRadius: 6), with: .color(.brand), style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
-                    }
-                }
-                ctx.withCGContext { cg in
-                    for t in texts { PageProcessor.drawText(t, in: cg, width: size.width, height: size.height) }
-                }
-                if let i = selectedText, texts.indices.contains(i) {
-                    let box = PageProcessor.textBox(texts[i], width: size.width, height: size.height).insetBy(dx: -6, dy: -6)
-                    ctx.stroke(Path(roundedRect: box, cornerRadius: 4), with: .color(.brand), style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
-                }
-            }
-            .frame(width: lay.size.width, height: lay.size.height)
+            MarkCanvas(marks: marks, live: live, texts: texts, placingGroup: placing, selectedText: selectedText)
+                .frame(width: lay.size.width, height: lay.size.height)
         }
         .frame(width: available.width, height: available.height)
         .contentShape(Rectangle())
-        .gesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { v in dragChanged(v, lay: lay) }
-                .onEnded { v in dragEnded(v, lay: lay) }
-        )
-        .simultaneousGesture(
-            MagnificationGesture()
-                .onChanged { v in pinch(v, lay: lay) }
-                .onEnded { _ in pinchStart = nil }
-        )
+        .gesture(drag)
+        .simultaneousGesture(magnify)
     }
 
     private func stroke(_ points: [Double]) -> MarkStroke {
@@ -197,13 +167,9 @@ struct MarkupView: View {
                 pinchStart = marks
             }
             guard let start = pinchStart else { return }
-            let dx = Double(v.translation.width / lay.size.width), dy = Double(v.translation.height / lay.size.height)
-            marks = start.map { m in
-                guard m.group == group else { return m }
-                var s = m
-                s.points = (0..<(m.points.count / 2)).flatMap { [m.points[2 * $0] + dx, m.points[2 * $0 + 1] + dy] }
-                return s
-            }
+            let dx = Double(v.translation.width / lay.size.width)
+            let dy = Double(v.translation.height / lay.size.height)
+            marks = start.map { m in m.group == group ? MarkupView.translated(m, dx: dx, dy: dy) : m }
         case .text:
             if dragStartTexts == nil {
                 dragStartTexts = texts
@@ -251,19 +217,10 @@ struct MarkupView: View {
         guard mode == .sign, let group = placing else { return }
         if pinchStart == nil { pinchStart = marks }
         guard let start = pinchStart else { return }
-        let own = start.filter { $0.group == group }
-        let xs = own.flatMap { m in (0..<(m.points.count / 2)).map { m.points[2 * $0] } }
-        let ys = own.flatMap { m in (0..<(m.points.count / 2)).map { m.points[2 * $0 + 1] } }
-        guard let minX = xs.min(), let maxX = xs.max(), let minY = ys.min(), let maxY = ys.max() else { return }
-        let cx = (minX + maxX) / 2, cy = (minY + maxY) / 2
+        guard let box = MarkupView.bounds(of: start.filter { $0.group == group }) else { return }
+        let cx = Double(box.midX), cy = Double(box.midY)
         let k = Double(min(max(v, 0.3), 3))
-        marks = start.map { m in
-            guard m.group == group else { return m }
-            var s = m
-            s.points = (0..<(m.points.count / 2)).flatMap { [cx + (m.points[2 * $0] - cx) * k, cy + (m.points[2 * $0 + 1] - cy) * k] }
-            s.width = m.width * k
-            return s
-        }
+        marks = start.map { m in m.group == group ? MarkupView.scaled(m, cx: cx, cy: cy, k: k) : m }
     }
 
     private func hitText(_ p: Pt, lay: Layout) -> Int? {
@@ -305,8 +262,17 @@ struct MarkupView: View {
         let cx = 0.5, cy = 0.72
         let group = MarkStroke.nextGroup(marks)
         let strokeWidth = s.width * fraction * Double(px.width) / sqrt(Double(px.width * px.height))
+        let left = cx - boxW / 2
+        let top = cy - boxH / 2
         for stroke in s.strokes where stroke.count >= 4 {
-            let pts = (0..<(stroke.count / 2)).flatMap { [cx - boxW / 2 + stroke[2 * $0] * boxW, cy - boxH / 2 + stroke[2 * $0 + 1] * boxH] }
+            var pts: [Double] = []
+            pts.reserveCapacity(stroke.count)
+            var i = 0
+            while i + 1 < stroke.count {
+                pts.append(left + stroke[i] * boxW)
+                pts.append(top + stroke[i + 1] * boxH)
+                i += 2
+            }
             marks.append(MarkStroke(points: pts, color: s.color, width: strokeWidth, group: group))
         }
         placing = group
@@ -419,24 +385,129 @@ struct MarkupView: View {
     }
 }
 
+
+extension MarkupView {
+    /// The stroke moved by a normalized offset.
+    static func translated(_ m: MarkStroke, dx: Double, dy: Double) -> MarkStroke {
+        var s = m
+        var pts: [Double] = []
+        pts.reserveCapacity(m.points.count)
+        var i = 0
+        while i + 1 < m.points.count {
+            pts.append(m.points[i] + dx)
+            pts.append(m.points[i + 1] + dy)
+            i += 2
+        }
+        s.points = pts
+        return s
+    }
+
+    /// The stroke scaled by `k` about a normalized centre; the line width follows.
+    static func scaled(_ m: MarkStroke, cx: Double, cy: Double, k: Double) -> MarkStroke {
+        var s = m
+        var pts: [Double] = []
+        pts.reserveCapacity(m.points.count)
+        var i = 0
+        while i + 1 < m.points.count {
+            pts.append(cx + (m.points[i] - cx) * k)
+            pts.append(cy + (m.points[i + 1] - cy) * k)
+            i += 2
+        }
+        s.points = pts
+        s.width = m.width * k
+        return s
+    }
+
+    /// Normalized bounding box of the given strokes.
+    static func bounds(of strokes: [MarkStroke]) -> CGRect? {
+        var minX = Double.infinity, minY = Double.infinity, maxX = -Double.infinity, maxY = -Double.infinity
+        for m in strokes {
+            var i = 0
+            while i + 1 < m.points.count {
+                minX = min(minX, m.points[i]); maxX = max(maxX, m.points[i])
+                minY = min(minY, m.points[i + 1]); maxY = max(maxY, m.points[i + 1])
+                i += 2
+            }
+        }
+        guard minX <= maxX, minY <= maxY else { return nil }
+        return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+    }
+}
+
+/// Strokes, the stroke being drawn, text boxes and the selection outlines over the page.
+struct MarkCanvas: View {
+    let marks: [MarkStroke]
+    let live: MarkStroke?
+    let texts: [TextMark]
+    let placingGroup: Int?
+    let selectedText: Int?
+
+    var body: some View {
+        Canvas { ctx, size in
+            for m in marks { MarkCanvas.draw(m, in: ctx, size: size) }
+            if let l = live { MarkCanvas.draw(l, in: ctx, size: size) }
+            if let group = placingGroup, let box = MarkupView.bounds(of: marks.filter { $0.group == group }) {
+                let rect = CGRect(x: box.minX * size.width - 8, y: box.minY * size.height - 8,
+                                  width: box.width * size.width + 16, height: box.height * size.height + 16)
+                MarkCanvas.dashed(rect, in: ctx)
+            }
+            ctx.withCGContext { cg in
+                for t in texts { PageProcessor.drawText(t, in: cg, width: size.width, height: size.height) }
+            }
+            if let i = selectedText, texts.indices.contains(i) {
+                let rect = PageProcessor.textBox(texts[i], width: size.width, height: size.height).insetBy(dx: -6, dy: -6)
+                MarkCanvas.dashed(rect, in: ctx)
+            }
+        }
+    }
+
+    private static func draw(_ m: MarkStroke, in ctx: GraphicsContext, size: CGSize) {
+        guard m.points.count >= 2 else { return }
+        let path = Path(PageProcessor.strokePath(m.points, width: size.width, height: size.height))
+        let unit: CGFloat = sqrt(size.width * size.height)
+        let lineWidth: CGFloat = max(1, CGFloat(m.width) * unit)
+        let color = Color(m.color.cgColor)
+        if m.highlighter {
+            var hctx = ctx
+            hctx.blendMode = .multiply
+            hctx.opacity = 110.0 / 255.0
+            hctx.stroke(path, with: .color(color), style: StrokeStyle(lineWidth: lineWidth, lineCap: .square, lineJoin: .round))
+        } else {
+            ctx.stroke(path, with: .color(color), style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round))
+        }
+    }
+
+    private static func dashed(_ rect: CGRect, in ctx: GraphicsContext) {
+        ctx.stroke(Path(roundedRect: rect, cornerRadius: 6), with: .color(Color.brand), style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
+    }
+}
+
 /// Small drawing of a saved signature.
 struct SignatureThumb: View {
     let signature: SavedSignature
 
     var body: some View {
         Canvas { ctx, size in
-            let aspect = max(signature.aspect, 0.05)
-            var w = size.width - 8, h = w / aspect
+            let aspect = CGFloat(max(signature.aspect, 0.05))
+            var w: CGFloat = size.width - 8
+            var h: CGFloat = w / aspect
             if h > size.height - 8 {
                 h = size.height - 8
                 w = h * aspect
             }
-            let ox = (size.width - w) / 2, oy = (size.height - h) / 2
+            let ox: CGFloat = (size.width - w) / 2
+            let oy: CGFloat = (size.height - h) / 2
+            let lineWidth: CGFloat = max(1, CGFloat(signature.width) * w)
+            let color = Color(signature.color.cgColor)
             for s in signature.strokes where s.count >= 4 {
                 var path = Path()
-                path.move(to: CGPoint(x: ox + s[0] * w, y: oy + s[1] * h))
-                for i in 1..<(s.count / 2) { path.addLine(to: CGPoint(x: ox + s[2 * i] * w, y: oy + s[2 * i + 1] * h)) }
-                ctx.stroke(path, with: .color(Color(signature.color.cgColor)), style: StrokeStyle(lineWidth: max(1, signature.width * w), lineCap: .round, lineJoin: .round))
+                var i = 0
+                while i + 1 < s.count {
+                    let p = CGPoint(x: ox + CGFloat(s[i]) * w, y: oy + CGFloat(s[i + 1]) * h)
+                    if i == 0 { path.move(to: p) } else { path.addLine(to: p) }
+                    i += 2
+                }
+                ctx.stroke(path, with: .color(color), style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round))
             }
         }
     }
@@ -524,8 +595,15 @@ struct SignaturePad: View {
         let pad = lineWidth
         let x0 = minX - pad, y0 = minY - pad
         let w = max(maxX - minX + 2 * pad, 1), h = max(maxY - minY + 2 * pad, 1)
-        let normalized: [[Double]] = strokes.filter { !$0.isEmpty }.map { s in
-            s.flatMap { [Double(($0.x - x0) / w), Double(($0.y - y0) / h)] }
+        var normalized: [[Double]] = []
+        for s in strokes where !s.isEmpty {
+            var flat: [Double] = []
+            flat.reserveCapacity(s.count * 2)
+            for p in s {
+                flat.append(Double((p.x - x0) / w))
+                flat.append(Double((p.y - y0) / h))
+            }
+            normalized.append(flat)
         }
         let signature = SavedSignature(strokes: normalized, aspect: Double(w / h), width: Double(lineWidth / w), color: color)
         if save { signatures.add(signature) }

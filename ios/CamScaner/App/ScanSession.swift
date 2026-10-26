@@ -248,9 +248,13 @@ final class ScanSession: ObservableObject {
     func autoDetect(_ index: Int) async {
         guard pages.indices.contains(index) else { return }
         let page = pages[index]
-        let detected: Quad? = page.detected ?? (await Task.detached {
-            UIImage(contentsOfFile: page.originalURL.path)?.normalized().cgImage.flatMap(DocumentDetector.detect)
-        }.value)
+        var detected = page.detected
+        if detected == nil {
+            let path = page.originalURL.path
+            detected = await Task.detached { () -> Quad? in
+                UIImage(contentsOfFile: path)?.normalized().cgImage.flatMap(DocumentDetector.detect)
+            }.value
+        }
         guard let now = pages.firstIndex(where: { $0.id == page.id }) else { return }
         update(now) { p in
             var q = p
