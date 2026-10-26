@@ -724,7 +724,8 @@ class UiFlowTest {
     /** Paper formats fit the outline inside the detected sheet; "Chia đôi" turns a page into two. */
     @Test
     fun paperFormatsAndSplitOnTheCropScreen() {
-        val scene = TestImages.documentPhoto(rx = 0.2, ry = 0.1)
+        // a landscape spread, like an open book: two portrait pages side by side
+        val scene = TestImages.documentPhoto(paperRatio = kotlin.math.sqrt(2.0), rx = 0.2, ry = 0.1)
         val file = TestImages.save(scene.bitmap, File(context.cacheDir, "exports/paper_test.jpg"))
         val intent = Intent(context, MainActivity::class.java)
             .setAction(Intent.ACTION_SEND)
@@ -759,7 +760,7 @@ class UiFlowTest {
         compose.waitText(str(R.string.doc_export_pdf), 60_000)
         val doc = app.documents.documents.value.single()
         assertEquals(2, doc.pages.size)
-        // each half of the A4 sheet is close to an A5
+        // each half of the landscape spread is a portrait A-series page
         doc.pages.forEach { assertEquals(1 / kotlin.math.sqrt(2.0), it.width.toDouble() / it.height, 0.06) }
     }
 
