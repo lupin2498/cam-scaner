@@ -493,41 +493,46 @@ struct CameraView: View {
     }
 
     var body: some View {
-        GeometryReader { geo in
-            ZStack {
-                Color.black
-                if camera.authorized == false {
-                    permissionDenied
-                } else if !camera.available {
-                    Text("Không tìm thấy máy ảnh").foregroundColor(.white)
-                } else {
-                    CameraPreview(controller: camera)
-                    overlay(geo.size)
-                        .contentShape(Rectangle())
-                        .gesture(
-                            MagnificationGesture()
-                                .onChanged { v in camera.setZoom(pinchStart * v) }
-                                .onEnded { _ in pinchStart = camera.zoom }
-                        )
-                        .simultaneousGesture(
-                            DragGesture(minimumDistance: 0)
-                                .onEnded { v in
-                                    guard abs(v.translation.width) < 8, abs(v.translation.height) < 8 else { return }
-                                    focusPoint = v.location
-                                    camera.focus(atLayerPoint: v.location)
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { focusPoint = nil }
-                                }
-                        )
+        ZStack {
+            // the preview fills the whole screen, under the status bar and the home indicator
+            GeometryReader { geo in
+                ZStack {
+                    Color.black
+                    if camera.authorized != false && camera.available {
+                        CameraPreview(controller: camera)
+                        overlay(geo.size)
+                            .contentShape(Rectangle())
+                            .gesture(
+                                MagnificationGesture()
+                                    .onChanged { v in camera.setZoom(pinchStart * v) }
+                                    .onEnded { _ in pinchStart = camera.zoom }
+                            )
+                            .simultaneousGesture(
+                                DragGesture(minimumDistance: 0)
+                                    .onEnded { v in
+                                        guard abs(v.translation.width) < 8, abs(v.translation.height) < 8 else { return }
+                                        focusPoint = v.location
+                                        camera.focus(atLayerPoint: v.location)
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { focusPoint = nil }
+                                    }
+                            )
+                    }
                 }
-                VStack(spacing: 0) {
-                    topBar.padding(.top, geo.safeAreaInsets.top + 6)
-                    Spacer()
-                    bottomControls.padding(.bottom, geo.safeAreaInsets.bottom + 8)
-                }
-                if camera.processing { ProgressView().tint(.white).scaleEffect(1.4) }
             }
+            .ignoresSafeArea()
+            if camera.authorized == false {
+                permissionDenied
+            } else if !camera.available {
+                Text("Không tìm thấy máy ảnh").foregroundColor(.white)
+            }
+            // the controls stay clear of the status bar, the camera notch and the home indicator
+            VStack(spacing: 0) {
+                topBar.padding(.top, 6)
+                Spacer()
+                bottomControls.padding(.bottom, 8)
+            }
+            if camera.processing { ProgressView().tint(.white).scaleEffect(1.4) }
         }
-        .ignoresSafeArea()
         .onAppear {
             camera.onPhoto = { image in
                 let m = session.cameraMode

@@ -167,8 +167,10 @@ jobs:
           echo "Simulator: $device"
           xcodebuild test -project CamScaner.xcodeproj -scheme CamScaner -destination "platform=iOS Simulator,name=$device" \
             -derivedDataPath build-sim CODE_SIGNING_ALLOWED=NO > test.log 2>&1 || {
-              echo "::group::test failures"; grep -E "error:|failed|Failing tests|XCTAssert" test.log | head -n 120; echo "::endgroup::"
-              tail -n 60 test.log; exit 1; }
+              echo "::group::last lines"; tail -n 40 test.log; echo "::endgroup::"
+              echo "== results"; grep -E "Test Case '.*' (passed|failed)" test.log | sed -E "s/^.*Test Case //"
+              echo "== failures"; grep -E "error: -\[|: error:" test.log | grep -v "^ *t = " | head -n 40
+              exit 1; }
           grep -E "Test Case .*(passed|failed)|Executed [0-9]+ tests" test.log | tail -n 40
 
       - uses: actions/upload-artifact@v4

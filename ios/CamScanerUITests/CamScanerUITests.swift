@@ -26,6 +26,14 @@ final class CamScanerUITests: XCTestCase {
         return e
     }
 
+    /// Taps an element once it can be touched (a screen may still be sliding away above it).
+    private func tap(_ id: String, timeout: TimeInterval = 30, file: StaticString = #filePath, line: UInt = #line) {
+        let e = element(id, timeout: timeout, file: file, line: line)
+        let hittable = expectation(for: NSPredicate(format: "hittable == true"), evaluatedWith: e)
+        XCTAssertEqual(XCTWaiter().wait(for: [hittable], timeout: 15), .completed, "\(id) cannot be touched", file: file, line: line)
+        e.tap()
+    }
+
     /// Scrolls the screen up until the element is on it (rows of long lists are only created when shown).
     @discardableResult
     private func scrolledTo(_ id: String, swipes: Int = 8, file: StaticString = #filePath, line: UInt = #line) -> XCUIElement {
@@ -58,12 +66,12 @@ final class CamScanerUITests: XCTestCase {
         element("crop.next", timeout: 60)
         element("crop.editor")
         shot("crop")
-        element("paper.A4").tap()
-        element("crop.next").tap()
+        tap("paper.A4")
+        tap("crop.next")
         element("filter.save", timeout: 30)
-        element("filter.lighten").tap()
+        tap("filter.lighten")
         shot("filter")
-        element("filter.save").tap()
+        tap("filter.save")
         element("doc.export", timeout: 60)
         element("doc.page.0")
         shot("document")
@@ -80,8 +88,8 @@ final class CamScanerUITests: XCTestCase {
 
     func testScanSaveAndExport() {
         scanSample()
-        element("doc.export").tap()
-        element("export.create").tap()
+        tap("doc.export")
+        tap("export.create")
         element("export.done", timeout: 60)
         shot("export")
         // text recognition runs for the text export
@@ -96,23 +104,23 @@ final class CamScanerUITests: XCTestCase {
 
     func testPageToolsTextAndRecognition() {
         scanSample()
-        element("doc.page.0").tap()
-        element("page.filter").tap()
+        tap("doc.page.0")
+        tap("page.filter")
 
         // a text box typed onto the page
         element("filter.panel.filters").swipeLeft()
-        element("filter.text").tap()
-        element("markup.add").tap()
+        tap("filter.text")
+        tap("markup.add")
         let field = element("input.field")
         field.tap()
         field.typeText("DA THANH TOAN")
-        element("input.done").tap()
+        tap("input.done")
         shot("markup_text")
-        element("markup.done").tap()
-        element("filter.save").tap()
+        tap("markup.done")
+        tap("filter.save")
 
         // back on the page: recognise its text
-        element("page.ocr", timeout: 60).tap()
+        tap("page.ocr", timeout: 60)
         let text = element("ocr.text", timeout: 120)
         let found = expectation(for: NSPredicate(format: "value CONTAINS[c] 'HOP DONG'"), evaluatedWith: text)
         XCTAssertEqual(XCTWaiter().wait(for: [found], timeout: 60), .completed, "recognised text: \(String(describing: text.value))")
@@ -124,14 +132,14 @@ final class CamScanerUITests: XCTestCase {
         backToHome()
 
         // a new folder is selected and empty
-        element("home.newFolder").tap()
+        tap("home.newFolder")
         let name = element("input.field")
         name.tap()
         name.typeText("Cong viec")
-        element("input.done").tap()
+        tap("input.done")
         element("folder.Cong viec")
         waitGone(app.descendants(matching: .any).matching(identifier: "doc.row").firstMatch)
-        element("folder.all").tap()
+        tap("folder.all")
         element("doc.row")
 
         // search finds nothing for an unknown word, the document again when cleared
@@ -140,17 +148,21 @@ final class CamScanerUITests: XCTestCase {
         search.tap()
         search.typeText("zzzz")
         waitGone(app.descendants(matching: .any).matching(identifier: "doc.row").firstMatch)
-        app.buttons["Cancel"].firstMatch.tap()
+        search.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 4))
         element("doc.row")
+        // leave the search (its button follows the app's language)
+        let cancel = app.buttons.matching(NSPredicate(format: "label IN %@", ["Cancel", "Hủy"])).firstMatch
+        XCTAssertTrue(cancel.waitForExistence(timeout: 5))
+        cancel.tap()
 
         // select the document, delete it, bring it back from the trash
-        element("home.more").tap()
+        tap("home.more")
         app.buttons["Chọn tài liệu"].tap()
-        element("doc.row").tap()
-        element("home.deleteSelected").tap()
+        tap("doc.row")
+        tap("home.deleteSelected")
         app.alerts.buttons["Xóa"].tap()
         waitGone(app.descendants(matching: .any).matching(identifier: "doc.row").firstMatch)
-        element("home.more").tap()
+        tap("home.more")
         app.buttons["Thùng rác (1)"].tap()
         let restore = app.buttons["Khôi phục"]
         XCTAssertTrue(restore.waitForExistence(timeout: 10))
@@ -161,7 +173,7 @@ final class CamScanerUITests: XCTestCase {
         element("doc.row")
 
         // settings: dark theme
-        element("home.more").tap()
+        tap("home.more")
         app.buttons["Cài đặt"].tap()
         element("settings.theme")
         app.buttons["Tối"].tap()
@@ -170,12 +182,13 @@ final class CamScanerUITests: XCTestCase {
 
     func testCameraScreenOpensAndCloses() {
         app.launch()
-        element("home.scan").tap()
+        tap("home.scan")
         // the simulator has no camera: the screen says so and closes again
         element("camera.close", timeout: 30)
         app.tap()
+        XCTAssertTrue(app.staticTexts["Không tìm thấy máy ảnh"].waitForExistence(timeout: 15))
         shot("camera")
-        element("camera.close").tap()
+        tap("camera.close")
         element("home.scan")
     }
 }
