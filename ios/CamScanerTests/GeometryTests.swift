@@ -79,8 +79,9 @@ final class GeometryTests: XCTestCase {
         let r = q.rotated(90)
         XCTAssertEqual(r.tl.x, 0.8, accuracy: 1e-9)
         XCTAssertEqual(r.tl.y, 0.1, accuracy: 1e-9)
-        XCTAssertEqual(q.rotated(90).rotated(270), q)
-        XCTAssertEqual(q.rotated(180).rotated(180), q)
+        // rounding: 1 - (1 - 0.2) is not exactly 0.2
+        XCTAssertLessThan(q.rotated(90).rotated(270).maxDistance(to: q), 1e-9)
+        XCTAssertLessThan(q.rotated(180).rotated(180).maxDistance(to: q), 1e-9)
     }
 
     func testAspectRatioOfAFrontalRectangle() {
