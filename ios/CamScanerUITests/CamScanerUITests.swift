@@ -26,6 +26,19 @@ final class CamScanerUITests: XCTestCase {
         return e
     }
 
+    /// Scrolls the screen up until the element is on it (rows of long lists are only created when shown).
+    @discardableResult
+    private func scrolledTo(_ id: String, swipes: Int = 8, file: StaticString = #filePath, line: UInt = #line) -> XCUIElement {
+        let e = app.descendants(matching: .any)[id].firstMatch
+        var n = 0
+        while !(e.exists && e.isHittable) && n < swipes {
+            app.swipeUp()
+            n += 1
+        }
+        XCTAssertTrue(e.exists && e.isHittable, "\(id) not found after scrolling", file: file, line: line)
+        return e
+    }
+
     private func waitGone(_ e: XCUIElement, timeout: TimeInterval = 20, file: StaticString = #filePath, line: UInt = #line) {
         let gone = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: e)
         XCTAssertEqual(XCTWaiter().wait(for: [gone], timeout: timeout), .completed, "element still there", file: file, line: line)
@@ -72,7 +85,7 @@ final class CamScanerUITests: XCTestCase {
         element("export.done", timeout: 60)
         shot("export")
         // text recognition runs for the text export
-        element("export.txt").tap()
+        scrolledTo("export.txt").tap()
         let file = element("export.file", timeout: 120)
         let txt = expectation(for: NSPredicate(format: "label ENDSWITH '.txt'"), evaluatedWith: file)
         XCTAssertEqual(XCTWaiter().wait(for: [txt], timeout: 120), .completed)

@@ -25,8 +25,9 @@ struct ExportView: View {
 
     var body: some View {
         ZStack {
+            ScrollViewReader { proxy in
             Form {
-                if let r = result { resultSection(r) }
+                if let r = result { resultSection(r).id("result") }
                 Section("Tên tệp") { TextField("Tên tệp", text: $options.fileName) }
                 Section("Bố cục") {
                     if let doc = doc { LayoutPreview(doc: doc, options: options) }
@@ -60,14 +61,23 @@ struct ExportView: View {
                     Button { exportDocx(withImages: false) } label: { Label("Word (DOCX)", systemImage: "doc.text") }
                     Button { exportDocx(withImages: true) } label: { Label("Word có kèm ảnh trang", systemImage: "doc.richtext") }
                 }
-                Section {
-                    Button { exportPdf() } label: {
-                        Label("Tạo PDF", systemImage: "doc.richtext").frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .accessibilityIdentifier("export.create")
-                    .disabled((doc?.pages.isEmpty ?? true) || options.fileName.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+            // the main action stays at hand below the long list of options
+            .safeAreaInset(edge: .bottom) {
+                Button { exportPdf() } label: {
+                    Label("Tạo PDF", systemImage: "doc.richtext").font(.headline).frame(maxWidth: .infinity).padding(.vertical, 6)
                 }
+                .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("export.create")
+                .disabled((doc?.pages.isEmpty ?? true) || options.fileName.trimmingCharacters(in: .whitespaces).isEmpty)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(.bar)
+            }
+            // a new file is shown at the top of the list
+            .onChange(of: result) { r in
+                if r != nil { withAnimation { proxy.scrollTo("result", anchor: .top) } }
+            }
             }
             if let p = progress { ProgressOverlay(message: "Đang tạo PDF… \(Int(p * 100))%", progress: p) }
             if let w = working { ProgressOverlay(message: w) }
