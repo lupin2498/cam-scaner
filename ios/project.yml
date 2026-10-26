@@ -61,12 +61,27 @@ targets:
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: "YES"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         SWIFT_STRICT_CONCURRENCY: minimal
+  CamScanerTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: CamScanerTests
+    dependencies:
+      - target: CamScaner
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.camscaner.app.tests
 schemes:
   CamScaner:
     build:
       targets:
         CamScaner: all
+        CamScanerTests: [test]
     run:
       config: Debug
+    test:
+      config: Debug
+      targets:
+        - CamScanerTests
     archive:
       config: Release
