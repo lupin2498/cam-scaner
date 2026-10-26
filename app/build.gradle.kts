@@ -60,11 +60,17 @@ android {
         buildConfig = true
     }
     packaging {
+        // native code (OpenCV, ML Kit) is compressed in the APK: about half the download size
+        jniLibs {
+            useLegacyPackaging = true
+        }
         resources {
             excludes += setOf(
                 "/META-INF/{AL2.0,LGPL2.1}",
                 "/META-INF/versions/9/OSGI-INF/MANIFEST.MF",
-                "/META-INF/DEPENDENCIES"
+                "/META-INF/DEPENDENCIES",
+                // tables of BouncyCastle's post-quantum algorithms; PDF encryption does not use them
+                "org/bouncycastle/pqc/**"
             )
         }
     }
@@ -99,8 +105,6 @@ dependencies {
     implementation(libs.mlkit.text.recognition)
     implementation(libs.mlkit.barcode.scanning)
     implementation(libs.mlkit.translate)
-    implementation(libs.mlkit.face.detection)
-    implementation(libs.mlkit.segmentation.selfie)
     implementation(libs.androidx.biometric)
 
     debugImplementation(libs.androidx.compose.ui.tooling)

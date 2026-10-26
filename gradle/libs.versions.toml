@@ -15,8 +15,6 @@ pdfbox = "2.0.27.0"
 mlkitText = "16.0.1"
 mlkitBarcode = "17.3.0"
 mlkitTranslate = "17.0.3"
-mlkitFace = "16.1.7"
-mlkitSegmentation = "16.0.0-beta6"
 biometric = "1.1.0"
 reorderable = "2.4.3"
 junit = "4.13.2"
@@ -50,8 +48,6 @@ pdfbox-android = { group = "com.tom-roush", name = "pdfbox-android", version.ref
 mlkit-text-recognition = { group = "com.google.mlkit", name = "text-recognition", version.ref = "mlkitText" }
 mlkit-barcode-scanning = { group = "com.google.mlkit", name = "barcode-scanning", version.ref = "mlkitBarcode" }
 mlkit-translate = { group = "com.google.mlkit", name = "translate", version.ref = "mlkitTranslate" }
-mlkit-face-detection = { group = "com.google.mlkit", name = "face-detection", version.ref = "mlkitFace" }
-mlkit-segmentation-selfie = { group = "com.google.mlkit", name = "segmentation-selfie", version.ref = "mlkitSegmentation" }
 androidx-biometric = { group = "androidx.biometric", name = "biometric", version.ref = "biometric" }
 reorderable = { group = "sh.calvin.reorderable", name = "reorderable", version.ref = "reorderable" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
