@@ -4,8 +4,8 @@ import LocalAuthentication
 /// Shared state of the app: storage, settings and the scan in progress.
 @MainActor
 final class AppState: ObservableObject {
-    let repository = DocumentRepository()
-    let settings = Settings()
+    let repository: DocumentRepository
+    let settings: Settings
     let signatures: SignatureStore
     let session: ScanSession
 
@@ -13,6 +13,9 @@ final class AppState: ObservableObject {
     private var prompting = false
 
     init() {
+        if UITestSupport.enabled { UITestSupport.reset() }
+        repository = DocumentRepository()
+        settings = Settings()
         signatures = SignatureStore(directory: repository.root.deletingLastPathComponent())
         session = ScanSession(repository: repository, settings: settings)
         locked = settings.appLock
@@ -48,28 +51,47 @@ struct CamScanerApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ZStack {
-                ContentView()
-                if state.locked {
-                    LockView { state.unlock() }
-                        .transition(.opacity)
-                }
-            }
+            RootView(state: state, settings: state.settings)
             .environmentObject(state)
             .environmentObject(state.repository)
             .environmentObject(state.settings)
             .environmentObject(state.session)
             .environmentObject(state.signatures)
-            .preferredColorScheme(state.settings.colorScheme)
             .tint(Color.brand)
             .onChange(of: scenePhase) { phase in
                 if phase == .background && state.settings.appLock { state.locked = true }
                 if phase == .active && state.locked { state.unlock() }
             }
+            .task {
+                if state.locked { state.unlock() }
+                if UITestSupport.importsSample {
+                    state.session.importImages([UITestSupport.samplePhoto()], into: nil)
+                    state.session.pendingImport = true
+                }
+            }
             .onOpenURL { url in
+                // a file opened with or shared to the app goes to the crop step
                 state.session.importFiles([url], into: nil)
+                state.session.pendingImport = true
             }
         }
+    }
+}
+
+/// The app with the lock screen over it; follows the theme chosen in the settings.
+struct RootView: View {
+    @ObservedObject var state: AppState
+    @ObservedObject var settings: Settings
+
+    var body: some View {
+        ZStack {
+            ContentView()
+            if state.locked {
+                LockView { state.unlock() }
+                    .transition(.opacity)
+            }
+        }
+        .preferredColorScheme(settings.colorScheme)
     }
 }
 

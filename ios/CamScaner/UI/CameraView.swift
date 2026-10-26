@@ -542,13 +542,17 @@ struct CameraView: View {
         .onChange(of: session.cameraMode) { _ in apply() }
         .onChange(of: settings.autoCapture) { _ in apply() }
         .sheet(item: $camera.barcode, onDismiss: { camera.resumeBarcodes() }) { code in BarcodeSheet(code: code) }
-        .sheet(isPresented: $pickingImage) {
+        .deferredSheet(isPresented: $pickingImage) { then in
             PhotoPicker(limit: 1) { images in
                 guard let image = images.first else { return }
-                if let code = Barcode.scan(image) { camera.barcode = code } else { message = "Không tìm thấy mã QR hay mã vạch trong ảnh" }
+                let code = Barcode.scan(image)
+                // the result sheet opens once the photo picker has gone
+                then {
+                    if let code = code { camera.barcode = code } else { message = "Không tìm thấy mã QR hay mã vạch trong ảnh" }
+                }
             }
         }
-        .alert(message ?? "", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) { Button("OK") {} }
+        .toast($message)
     }
 
     private func apply() {
@@ -603,6 +607,8 @@ struct CameraView: View {
     private var topBar: some View {
         HStack(spacing: 6) {
             iconButton("xmark", action: onCancel)
+                .accessibilityLabel("Đóng")
+                .accessibilityIdentifier("camera.close")
             Spacer()
             if mode == .qr {
                 Button { pickingImage = true } label: {

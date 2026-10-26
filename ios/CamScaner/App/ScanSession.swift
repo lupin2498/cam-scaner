@@ -36,7 +36,7 @@ final class ScanSession: ObservableObject {
     @Published var errorMessage: String?
     /// Set when an import or capture is ready for cropping; the flow opens the crop step.
     @Published var cropReady = false
-    /// Set when a share-sheet import arrives while no flow is open.
+    /// Set when files handed over by another app should open the crop step.
     @Published var pendingImport = false
 
     private(set) var targetDocId: String?
@@ -71,9 +71,17 @@ final class ScanSession: ObservableObject {
     }
 
     func clear() {
-        for p in pages where p.existingPageId == nil { try? FileManager.default.removeItem(at: p.originalURL) }
+        for url in Set(pages.map(\.originalURL)) { discard(url) }
         pages = []
         currentIndex = 0
+    }
+
+    /// Deletes a photo taken or imported in this session. Photos stored in a document (a page being
+    /// edited, or the half of such a page split off as a new one) live elsewhere and are never touched.
+    private func discard(_ url: URL) {
+        let folder = url.deletingLastPathComponent().resolvingSymlinksInPath().standardizedFileURL.path
+        guard folder == workDir.resolvingSymlinksInPath().standardizedFileURL.path else { return }
+        try? FileManager.default.removeItem(at: url)
     }
 
     // MARK: adding photos
@@ -106,7 +114,7 @@ final class ScanSession: ObservableObject {
         }.value
         guard let drafts = result else { return false }
         guard gen == generation else {
-            drafts.first.map { try? FileManager.default.removeItem(at: $0.originalURL) }
+            drafts.first.map { discard($0.originalURL) }
             return false
         }
         pages += drafts
@@ -134,7 +142,6 @@ final class ScanSession: ObservableObject {
         if targetDocId != docId || pages.isEmpty { start(docId: docId) }
         let gen = generation
         importing = true
-        pendingImport = true
         Task {
             var imported = 0
             for image in images {
@@ -153,7 +160,6 @@ final class ScanSession: ObservableObject {
         if targetDocId != docId || pages.isEmpty { start(docId: docId) }
         let gen = generation
         importing = true
-        pendingImport = true
         Task {
             var failed = 0
             for url in urls {
@@ -289,7 +295,7 @@ final class ScanSession: ObservableObject {
         guard pages.indices.contains(index) else { return }
         let removed = pages.remove(at: index)
         let shared = pages.contains { $0.originalURL == removed.originalURL }
-        if removed.existingPageId == nil && !shared { try? FileManager.default.removeItem(at: removed.originalURL) }
+        if !shared { discard(removed.originalURL) }
         currentIndex = min(currentIndex, max(0, pages.count - 1))
     }
 

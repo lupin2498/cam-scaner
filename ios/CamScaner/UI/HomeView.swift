@@ -57,22 +57,26 @@ struct HomeView: View {
         }
         .navigationTitle(selecting ? "Đã chọn \(selection.count)" : "Cam Scaner")
         .navigationBarTitleDisplayMode(.inline)
-        .searchable(text: $query, prompt: "Tìm tài liệu (cả nội dung đã nhận dạng)")
+        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Tìm tài liệu (cả nội dung đã nhận dạng)")
         .toolbar { toolbar }
-        .sheet(isPresented: $showPhotos) {
+        .deferredSheet(isPresented: $showPhotos) { then in
             PhotoPicker(limit: 50) { images in
                 guard !images.isEmpty else { return }
-                session.start(docId: nil)
-                session.importImages(images, into: nil)
-                flow = .imported(targetDocId: nil)
+                then {
+                    session.start(docId: nil)
+                    session.importImages(images, into: nil)
+                    flow = .imported(targetDocId: nil)
+                }
             }
         }
-        .sheet(isPresented: $showFiles) {
+        .deferredSheet(isPresented: $showFiles) { then in
             FilePicker(types: fileTypes) { urls in
                 guard !urls.isEmpty else { return }
-                session.start(docId: nil)
-                session.importFiles(urls, into: nil)
-                flow = .imported(targetDocId: nil)
+                then {
+                    session.start(docId: nil)
+                    session.importFiles(urls, into: nil)
+                    flow = .imported(targetDocId: nil)
+                }
             }
         }
         .sheet(isPresented: $newFolder) {
@@ -115,21 +119,21 @@ struct HomeView: View {
             }
             Button("Hủy", role: .cancel) {}
         } message: { Text("\(selection.count) tài liệu sẽ được chuyển vào thùng rác.") }
-        .alert(message ?? "", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) { Button("OK") {} }
+        .toast($message)
     }
 
     private var folderBar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                Chip(text: "Tất cả", selected: folderId == nil) { folderId = nil }
+                Chip(text: "Tất cả", selected: folderId == nil, id: "folder.all") { folderId = nil }
                 ForEach(repository.folders) { f in
-                    Chip(text: f.name, selected: folderId == f.id) { folderId = f.id }
+                    Chip(text: f.name, selected: folderId == f.id, id: "folder.\(f.name)") { folderId = f.id }
                         .contextMenu {
                             Button("Đổi tên thư mục") { renamingFolder = f }
                             Button("Xóa thư mục", role: .destructive) { deletingFolder = f }
                         }
                 }
-                Chip(text: "+ Thư mục mới", selected: false) { newFolder = true }
+                Chip(text: "+ Thư mục mới", selected: false, id: "home.newFolder") { newFolder = true }
             }
             .padding(.horizontal)
             .padding(.vertical, 6)
@@ -145,8 +149,11 @@ struct HomeView: View {
                     .onTapGesture {
                         if selecting { toggle(doc.id) } else { openDocId = doc.id }
                     }
-                    .onLongPressGesture { selecting = true; toggle(doc.id) }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("doc.row")
+                    // a long press opens this menu; selecting several documents starts from it
                     .contextMenu {
+                        Button("Chọn") { selecting = true; selection = [doc.id] }
                         Button("Xuất PDF nhanh") { quickShare(doc) }
                         Button("Đổi tên") { renaming = doc }
                         Button("Chuyển vào thư mục") { movingIds = [doc.id] }
@@ -181,6 +188,8 @@ struct HomeView: View {
                 Image(systemName: "square.and.arrow.down").font(.title3).padding(14)
                     .background(Color(UIColor.secondarySystemBackground), in: Circle()).shadow(radius: 3)
             }
+            .accessibilityLabel("Nhập")
+            .accessibilityIdentifier("home.import")
             Button {
                 session.start(docId: nil)
                 flow = .camera(targetDocId: nil)
@@ -188,6 +197,7 @@ struct HomeView: View {
                 Label("Quét", systemImage: "camera.fill").font(.headline).padding(.horizontal, 20).padding(.vertical, 14)
                     .background(Color.accentColor, in: Capsule()).foregroundColor(.white).shadow(radius: 3)
             }
+            .accessibilityIdentifier("home.scan")
         }
         .padding(20)
     }
@@ -202,7 +212,10 @@ struct HomeView: View {
                 Button { selection = Set(filtered.map(\.id)) } label: { Image(systemName: "checkmark.circle") }
                 Button { movingIds = Array(selection) } label: { Image(systemName: "folder") }.disabled(selection.isEmpty)
                 Button { confirmMerge = true } label: { Image(systemName: "arrow.triangle.merge") }.disabled(selection.count < 2)
-                Button(role: .destructive) { confirmDeleteSelected = true } label: { Image(systemName: "trash") }.disabled(selection.isEmpty)
+                Button(role: .destructive) { confirmDeleteSelected = true } label: { Image(systemName: "trash") }
+                    .disabled(selection.isEmpty)
+                    .accessibilityLabel("Xóa đã chọn")
+                    .accessibilityIdentifier("home.deleteSelected")
             } else {
                 Menu {
                     Picker("Sắp xếp", selection: Binding(get: { settings.sortOrder }, set: { settings.sortOrder = $0 })) {
@@ -216,6 +229,8 @@ struct HomeView: View {
                         Button { selecting = true } label: { Label("Chọn tài liệu", systemImage: "checkmark.circle") }
                     }
                 } label: { Image(systemName: "ellipsis.circle") }
+                .accessibilityLabel("Thêm")
+                .accessibilityIdentifier("home.more")
             }
         }
     }

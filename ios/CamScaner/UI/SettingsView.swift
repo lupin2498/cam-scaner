@@ -28,6 +28,7 @@ struct SettingsView: View {
                         ForEach(AppTheme.allCases) { Text($0.label).tag($0) }
                     }
                     .pickerStyle(.segmented)
+                    .accessibilityIdentifier("settings.theme")
                 }
                 Section("Tiền tố tên tài liệu mới") {
                     TextField("Ví dụ: Hóa đơn (mặc định: Cam Scaner)", text: $settings.namePrefix)
@@ -62,24 +63,29 @@ struct SettingsView: View {
         }
         .navigationTitle("Cài đặt")
         .sheet(item: Binding(get: { exportURL.map(ShareItem.init) }, set: { exportURL = $0?.url })) { FileExporter(url: $0.url) }
-        .sheet(isPresented: $restoring) {
+        .deferredSheet(isPresented: $restoring) { then in
             FilePicker(types: [.zip, .data]) { urls in
                 guard let url = urls.first else { return }
-                busy = "Đang khôi phục…"
-                Task {
-                    let access = url.startAccessingSecurityScopedResource()
-                    defer { if access { url.stopAccessingSecurityScopedResource() } }
-                    if let data = try? Data(contentsOf: url) {
-                        let count = repository.restoreBackup(data)
-                        message = count < 0 ? "Tệp không phải bản sao lưu của Cam Scaner" : "Đã khôi phục \(count) tài liệu"
-                    } else {
-                        message = "Không đọc được tệp"
-                    }
-                    busy = nil
-                }
+                then { restore(url) }
             }
         }
-        .alert(message ?? "", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) { Button("OK") {} }
+        .toast($message)
+    }
+
+    private func restore(_ url: URL) {
+        busy = "Đang khôi phục…"
+        Task {
+            let access = url.startAccessingSecurityScopedResource()
+            defer { if access { url.stopAccessingSecurityScopedResource() } }
+            // mapped, so a large backup is not read into memory at once
+            if let data = try? Data(contentsOf: url, options: .alwaysMapped) {
+                let count = repository.restoreBackup(data)
+                message = count < 0 ? "Tệp không phải bản sao lưu của Cam Scaner" : "Đã khôi phục \(count) tài liệu"
+            } else {
+                message = "Không đọc được tệp"
+            }
+            busy = nil
+        }
     }
 
     private func backup() {

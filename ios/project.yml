@@ -71,17 +71,30 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.camscaner.app.tests
+  CamScanerUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: CamScanerUITests
+    dependencies:
+      - target: CamScaner
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.camscaner.app.uitests
+        TEST_TARGET_NAME: CamScaner
 schemes:
   CamScaner:
     build:
       targets:
         CamScaner: all
         CamScanerTests: [test]
+        CamScanerUITests: [test]
     run:
       config: Debug
     test:
       config: Debug
       targets:
         - CamScanerTests
+        - CamScanerUITests
     archive:
       config: Release

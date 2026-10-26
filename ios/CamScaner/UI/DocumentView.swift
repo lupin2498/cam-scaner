@@ -70,12 +70,14 @@ struct DocumentView: View {
         .sheet(isPresented: $moving) {
             FolderPickerSheet(current: doc.folderId) { repository.moveToFolder([docId], $0); message = "Đã chuyển vào thư mục" }
         }
-        .sheet(isPresented: $showPhotos) {
+        .deferredSheet(isPresented: $showPhotos) { then in
             PhotoPicker(limit: 50) { images in
                 guard !images.isEmpty else { return }
-                session.start(docId: docId)
-                session.importImages(images, into: docId)
-                flow = .imported(targetDocId: docId)
+                then {
+                    session.start(docId: docId)
+                    session.importImages(images, into: docId)
+                    flow = .imported(targetDocId: docId)
+                }
             }
         }
         .sheet(item: $transfer) { kind in
@@ -101,7 +103,7 @@ struct DocumentView: View {
             }
             Button("Hủy", role: .cancel) {}
         } message: { Text("Xóa \(selection.count) trang đã chọn?") }
-        .alert(message ?? "", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) { Button("OK") {} }
+        .toast($message)
     }
 
     private func grid(_ doc: ScanDocument) -> some View {
@@ -126,6 +128,10 @@ struct DocumentView: View {
                     .onTapGesture {
                         if selecting { toggle(page.id) } else { openPage = index }
                     }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Trang \(index + 1)")
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityIdentifier("doc.page.\(index)")
                 }
             }
             .padding(12)
@@ -157,21 +163,21 @@ struct DocumentView: View {
     private func bottomBar(_ doc: ScanDocument) -> some View {
         HStack {
             Spacer()
-            bottomAction("Chụp thêm", "camera") {
+            bottomAction("Chụp thêm", "camera", id: "doc.addCamera") {
                 session.start(docId: docId)
                 flow = .camera(targetDocId: docId)
             }
             Spacer()
-            bottomAction("Thêm ảnh", "photo.on.rectangle") { showPhotos = true }
+            bottomAction("Thêm ảnh", "photo.on.rectangle", id: "doc.addPhotos") { showPhotos = true }
             Spacer()
-            bottomAction("Xuất PDF", "doc.richtext", highlighted: true) { showExport = true }
+            bottomAction("Xuất PDF", "doc.richtext", highlighted: true, id: "doc.export") { showExport = true }
             Spacer()
         }
         .padding(.vertical, 8)
         .background(.bar)
     }
 
-    private func bottomAction(_ title: String, _ icon: String, highlighted: Bool = false, action: @escaping () -> Void) -> some View {
+    private func bottomAction(_ title: String, _ icon: String, highlighted: Bool = false, id: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             VStack(spacing: 4) {
                 Image(systemName: icon)
@@ -179,6 +185,8 @@ struct DocumentView: View {
             }
             .foregroundColor(highlighted ? .accentColor : .primary)
         }
+        .accessibilityLabel(title)
+        .accessibilityIdentifier(id)
     }
 
     @ToolbarContentBuilder

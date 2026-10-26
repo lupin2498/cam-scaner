@@ -3,6 +3,7 @@ import SwiftUI
 /// Crop step: the sheet outline with draggable corners and edges, paper formats, rotation, splitting.
 struct CropView: View {
     @EnvironmentObject private var session: ScanSession
+    @EnvironmentObject private var settings: Settings
     let canAddPages: Bool
     let onBack: () -> Void
     let onNext: () -> Void
@@ -37,6 +38,7 @@ struct CropView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(!(page.corners ?? .full).isValid())
+                .accessibilityIdentifier("crop.next")
                 .padding(.horizontal, 16)
                 .padding(.bottom, 8)
             } else {
@@ -51,11 +53,15 @@ struct CropView: View {
 
     // MARK: header
 
+    /// Back to the camera adds pages in batch mode; a single shot is taken again.
+    private var backTitle: String { canAddPages ? (settings.batchMode ? "Chụp thêm" : "Chụp lại") : "Hủy" }
+
     private var header: some View {
         HStack {
             Button(action: onBack) {
-                Label(canAddPages ? "Chụp thêm" : "Hủy", systemImage: canAddPages ? "camera" : "xmark").labelStyle(.titleAndIcon)
+                Label(backTitle, systemImage: canAddPages ? "camera" : "xmark").labelStyle(.titleAndIcon)
             }
+            .accessibilityIdentifier("crop.back")
             Spacer()
             if session.pages.count > 1 {
                 HStack(spacing: 10) {
@@ -68,7 +74,7 @@ struct CropView: View {
                 Text("Cắt mép").font(.headline)
             }
             Spacer()
-            Label(canAddPages ? "Chụp thêm" : "Hủy", systemImage: canAddPages ? "camera" : "xmark").labelStyle(.titleAndIcon).hidden()
+            Label(backTitle, systemImage: canAddPages ? "camera" : "xmark").labelStyle(.titleAndIcon).hidden()
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
@@ -137,6 +143,7 @@ struct CropView: View {
         }
         .frame(width: size.width, height: size.height)
         .contentShape(Rectangle())
+        .accessibilityIdentifier("crop.editor")
         .gesture(
             DragGesture(minimumDistance: 0)
                 .onChanged { v in drag(v, page: page, lay: lay) }
@@ -218,8 +225,10 @@ struct CropView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 DarkChip(text: "Tự do", selected: page.paper == nil) { session.fitPaper(index, nil) }
+                    .accessibilityIdentifier("paper.free")
                 ForEach(PaperPreset.allCases) { preset in
                     DarkChip(text: preset.label, selected: page.paper == preset) { session.fitPaper(index, preset) }
+                        .accessibilityIdentifier("paper.\(preset.rawValue)")
                 }
             }
             .padding(.horizontal, 12)
@@ -274,6 +283,8 @@ struct CropView: View {
             return
         }
         if loadedFor == url, image != nil { return }
+        // never show the previous page's photo under this page's outline
+        image = nil
         let path = url.path
         let loaded = await Task.detached(priority: .userInitiated) { UIImage(contentsOfFile: path)?.normalized().scaledDown(maxDim: 1800) }.value
         image = loaded

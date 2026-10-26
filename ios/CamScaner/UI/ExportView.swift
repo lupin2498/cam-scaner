@@ -56,6 +56,7 @@ struct ExportView: View {
                     Button { saveToPhotos() } label: { Label("Lưu ảnh vào thư viện", systemImage: "photo.on.rectangle") }
                     Button { exportLongImage() } label: { Label("Ảnh dài", systemImage: "rectangle.portrait.arrowtriangle.2.outward") }
                     Button { exportText() } label: { Label("Văn bản (TXT)", systemImage: "doc.plaintext") }
+                        .accessibilityIdentifier("export.txt")
                     Button { exportDocx(withImages: false) } label: { Label("Word (DOCX)", systemImage: "doc.text") }
                     Button { exportDocx(withImages: true) } label: { Label("Word có kèm ảnh trang", systemImage: "doc.richtext") }
                 }
@@ -64,6 +65,7 @@ struct ExportView: View {
                         Label("Tạo PDF", systemImage: "doc.richtext").frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("export.create")
                     .disabled((doc?.pages.isEmpty ?? true) || options.fileName.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
@@ -77,11 +79,13 @@ struct ExportView: View {
             o.fileName = doc?.name ?? "scan"
             o.password = ""
             options = o
+            passwordOn = false
+            watermarkOn = !o.watermark.trimmingCharacters(in: .whitespaces).isEmpty
         }
         .onChange(of: options) { _ in if result?.pathExtension == "pdf" { result = nil } }
         .sheet(isPresented: $share) { if let r = result { ShareSheet(items: [r]) } }
         .sheet(isPresented: $save) { if let r = result { FileExporter(url: r) } }
-        .alert(message ?? "", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) { Button("OK") {} }
+        .toast($message)
     }
 
     private func picker<T: Hashable & Identifiable>(_ title: String, _ items: [T], _ selection: Binding<T>, label: @escaping (T) -> String) -> some View {
@@ -95,7 +99,8 @@ struct ExportView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Label("Đã tạo tệp (\(formatSize(Int64((try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int64) ?? 0))))", systemImage: "checkmark.circle.fill")
                     .foregroundColor(.accentColor)
-                Text(url.lastPathComponent).font(.footnote).foregroundColor(.secondary)
+                    .accessibilityIdentifier("export.done")
+                Text(url.lastPathComponent).font(.footnote).foregroundColor(.secondary).accessibilityIdentifier("export.file")
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack {
                         Button("Chia sẻ") { share = true }.buttonStyle(.bordered)

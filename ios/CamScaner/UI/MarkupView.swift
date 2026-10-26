@@ -56,6 +56,8 @@ struct MarkupView: View {
     @State private var pendingPoint: Pt?
     @State private var dragStartTexts: [TextMark]?
     @State private var moved = false
+    /// The text selected when the current touch began.
+    @State private var selectedBefore: Int?
 
     init(image: UIImage, initialMarks: [MarkStroke], initialTexts: [TextMark], mode: MarkupMode,
          onDone: @escaping ([MarkStroke], [TextMark]) -> Void, onCancel: @escaping () -> Void) {
@@ -70,11 +72,11 @@ struct MarkupView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Button("Hủy", action: onCancel)
+                Button("Hủy", action: onCancel).accessibilityIdentifier("markup.cancel")
                 Spacer()
                 Text(mode.title).font(.headline)
                 Spacer()
-                Button("Xong") { onDone(marks, texts) }.font(.headline)
+                Button("Xong") { onDone(marks, texts) }.font(.headline).accessibilityIdentifier("markup.done")
             }
             .foregroundColor(.white)
             .padding(.horizontal, 16)
@@ -89,7 +91,7 @@ struct MarkupView: View {
         .background(Color(red: 0.06, green: 0.075, blue: 0.07).ignoresSafeArea())
         .preferredColorScheme(.dark)
         .sheet(isPresented: $showPad) {
-            SignaturePad { signature in place(signature) }
+            SignaturePad { signature in place(signature) }.environmentObject(signatures)
         }
         .sheet(isPresented: Binding(get: { editingText != nil }, set: { if !$0 { editingText = nil } })) {
             let existing = editingText.flatMap { $0 >= 0 && texts.indices.contains($0) ? texts[$0].text : nil }
@@ -106,7 +108,7 @@ struct MarkupView: View {
         switch mode {
         case .pen: return nil
         case .sign: return placing != nil ? "Kéo để di chuyển chữ ký, chụm hai ngón để đổi cỡ" : "Chọn chữ ký đã lưu hoặc thêm chữ ký mới"
-        case .text: return selectedText == nil ? "Chạm vào trang để thêm chữ; chạm vào chữ để chọn" : "Kéo để di chuyển; chạm lần nữa để sửa nội dung"
+        case .text: return selectedText == nil ? "Chạm vào trang để thêm chữ; chạm vào chữ để chọn" : "Kéo để di chuyển; chạm lần nữa để sửa nội dung; chạm chỗ trống để bỏ chọn"
         }
     }
 
@@ -141,6 +143,7 @@ struct MarkupView: View {
         }
         .frame(width: available.width, height: available.height)
         .contentShape(Rectangle())
+        .accessibilityIdentifier("markup.canvas")
         .gesture(drag)
         .simultaneousGesture(magnify)
     }
@@ -174,8 +177,8 @@ struct MarkupView: View {
             if dragStartTexts == nil {
                 dragStartTexts = texts
                 moved = false
-                let start = lay.normalized(v.startLocation)
-                selectedText = hitText(start, lay: lay)
+                selectedBefore = selectedText
+                selectedText = hitText(lay.normalized(v.startLocation), lay: lay)
             }
             guard let i = selectedText, let start = dragStartTexts, start.indices.contains(i) else { return }
             if abs(v.translation.width) > 4 || abs(v.translation.height) > 4 { moved = true }
@@ -199,12 +202,13 @@ struct MarkupView: View {
             dragStartTexts = nil
             pinchStart = nil
         case .text:
-            let tapped = abs(v.translation.width) <= 4 && abs(v.translation.height) <= 4
+            let tapped = !moved && abs(v.translation.width) <= 4 && abs(v.translation.height) <= 4
             if tapped {
-                if let i = selectedText, dragStartTexts?.indices.contains(i) == true, !moved {
-                    // second tap on the selected text edits it
-                    if hitText(lay.normalized(v.startLocation), lay: lay) == i, texts[i] == dragStartTexts?[i] { editingText = i }
-                } else if selectedText == nil {
+                if let i = selectedText {
+                    // the first tap selects a text, a second tap on it edits it
+                    if selectedBefore == i { editingText = i }
+                } else if selectedBefore == nil {
+                    // a tap on the empty page adds a text there; with a text selected it only deselects
                     pendingPoint = lay.normalized(v.location)
                     editingText = -1
                 }
@@ -358,6 +362,7 @@ struct MarkupView: View {
     private var textControls: some View {
         HStack(spacing: 14) {
             Button { pendingPoint = Pt(0.5, 0.5); selectedText = nil; editingText = -1 } label: { Label("Thêm", systemImage: "plus") }
+                .accessibilityIdentifier("markup.add")
             if let i = selectedText, texts.indices.contains(i) {
                 Divider().frame(height: 24)
                 Button { editSelected { $0.size = max(0.012, $0.size / 1.2) } } label: { Image(systemName: "textformat.size.smaller") }
@@ -549,6 +554,7 @@ struct SignaturePad: View {
                         .stroke(Color.gray.opacity(0.4), style: StrokeStyle(lineWidth: 1, dash: [6, 4]))
                     }
                     .contentShape(Rectangle())
+                    .accessibilityIdentifier("signature.pad")
                     .gesture(
                         DragGesture(minimumDistance: 0)
                             .onChanged { v in current.append(v.location) }
@@ -583,7 +589,7 @@ struct SignaturePad: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Hủy") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Dùng") { finish() }.disabled(strokes.allSatisfy { $0.isEmpty })
+                    Button("Dùng") { finish() }.disabled(strokes.allSatisfy { $0.isEmpty }).accessibilityIdentifier("signature.use")
                 }
             }
         }

@@ -160,7 +160,7 @@ jobs:
           name: cam-scaner-ipa
           path: ios/*.ipa
 
-      - name: Unit tests (simulator)
+      - name: Unit and UI tests (simulator)
         working-directory: ios
         run: |
           device=$(xcrun simctl list devices available | grep -E "^\s+iPhone" | head -n 1 | sed -E 's/^ *(iPhone[^(]*) \(.*/\1/' | xargs)
@@ -169,7 +169,7 @@ jobs:
             -derivedDataPath build-sim CODE_SIGNING_ALLOWED=NO > test.log 2>&1 || {
               echo "::group::test failures"; grep -E "error:|failed|Failing tests|XCTAssert" test.log | head -n 120; echo "::endgroup::"
               tail -n 60 test.log; exit 1; }
-          grep -E "Executed [0-9]+ tests" test.log | tail -n 2
+          grep -E "Test Case .*(passed|failed)|Executed [0-9]+ tests" test.log | tail -n 40
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -178,6 +178,7 @@ jobs:
           path: |
             ios/build.log
             ios/test.log
+            ios/build-sim/Logs/Test/*.xcresult
 
   release:
     if: github.event_name == 'workflow_dispatch' && inputs.publish

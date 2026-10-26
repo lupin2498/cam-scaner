@@ -17,6 +17,9 @@ enum ScanFlow: Identifiable, Equatable {
 
 struct ContentView: View {
     @EnvironmentObject private var session: ScanSession
+    @EnvironmentObject private var repository: DocumentRepository
+    @EnvironmentObject private var settings: Settings
+    @EnvironmentObject private var signatures: SignatureStore
     @State private var flow: ScanFlow?
     @State private var openDocId: String?
 
@@ -33,6 +36,9 @@ struct ContentView: View {
                 if let id = savedId { openDocId = id }
             }
             .environmentObject(session)
+            .environmentObject(repository)
+            .environmentObject(settings)
+            .environmentObject(signatures)
         }
         .onChange(of: session.pendingImport) { pending in
             // files handed over by another app open the crop step; an import started from a screen

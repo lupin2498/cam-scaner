@@ -1,6 +1,7 @@
 package com.camscaner.app
 
 import android.graphics.BitmapFactory
+import androidx.lifecycle.SavedStateHandle
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.camscaner.app.data.DocumentRepository
@@ -8,6 +9,7 @@ import com.camscaner.app.data.DraftPage
 import com.camscaner.app.export.Exporters
 import com.camscaner.app.scanner.DocumentDetector
 import com.camscaner.app.scanner.ScanFilter
+import com.camscaner.app.ui.ScanSessionViewModel
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -60,6 +62,48 @@ class RepositoryTest {
 
     private fun document(name: String, pages: Int): String = runBlocking {
         repository.saveDrafts(null, name, (0 until pages).map { draft(0.1 * it) })
+    }
+
+    /** Editing a stored page and splitting it never deletes the photo the stored page still uses. */
+    @Test
+    fun editingAStoredPageKeepsItsOriginal() = runBlocking {
+        val id = document("Tach trang", 1)
+        val pageId = repository.get(id)!!.pages[0].id
+        val original = repository.originalFile(id, pageId)
+        assertTrue(original.exists())
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        lateinit var session: ScanSessionViewModel
+        instrumentation.runOnMainSync { session = ScanSessionViewModel(app, SavedStateHandle()) }
+
+        // split, then give up
+        instrumentation.runOnMainSync {
+            session.editExisting(id, pageId, "page")
+            session.split(0)
+        }
+        assertEquals(2, session.pages.size)
+        assertEquals(session.pages[0].originalFile, session.pages[1].originalFile)
+        instrumentation.runOnMainSync { session.abandon() }
+        assertTrue("giving up the edit deleted the stored photo", original.exists())
+
+        // split, then take both halves out of the session
+        instrumentation.runOnMainSync {
+            session.editExisting(id, pageId, "page")
+            session.split(0)
+            session.remove(0)
+            session.remove(0)
+        }
+        assertTrue("removing the halves deleted the stored photo", original.exists())
+
+        // split and save: the new half gets its own copy and the session is cleared as after saving
+        instrumentation.runOnMainSync {
+            session.editExisting(id, pageId, "page")
+            session.split(0)
+        }
+        repository.saveDrafts(id, "", session.pages.toList())
+        instrumentation.runOnMainSync { session.clear() }
+        val doc = repository.get(id)!!
+        assertEquals(2, doc.pages.size)
+        doc.pages.forEach { assertTrue("page ${it.id} lost its photo", repository.originalFile(id, it.id).exists()) }
     }
 
     @Test

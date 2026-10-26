@@ -139,9 +139,17 @@ class ScanSessionViewModel(app: Application, private val state: SavedStateHandle
     }
 
     fun clear() {
-        pages.filter { it.existingPageId == null }.forEach { it.originalFile.delete() }
+        pages.map { it.originalFile }.distinct().forEach(::discard)
         pages.clear()
         currentIndex = 0
+    }
+
+    /**
+     * Deletes a photo taken or imported in this session. Photos stored in a document (a page being
+     * edited, or the half of such a page split off as a new one) live elsewhere and are never touched.
+     */
+    private fun discard(file: File) {
+        if (file.absoluteFile.parentFile?.canonicalPath == workDir.canonicalPath) file.delete()
     }
 
     /**
@@ -399,7 +407,7 @@ class ScanSessionViewModel(app: Application, private val state: SavedStateHandle
         val removed = pages.removeAt(index)
         // the two halves of a book spread share one photo
         val shared = pages.any { it.originalFile.absolutePath == removed.originalFile.absolutePath }
-        if (removed.existingPageId == null && !shared) removed.originalFile.delete()
+        if (!shared) discard(removed.originalFile)
         currentIndex = currentIndex.coerceAtMost(pages.lastIndex).coerceAtLeast(0)
     }
 

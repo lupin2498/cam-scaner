@@ -90,6 +90,7 @@ final class PreviewRenderer: ObservableObject {
 struct FilterView: View {
     @EnvironmentObject private var session: ScanSession
     @EnvironmentObject private var settings: Settings
+    @EnvironmentObject private var signatures: SignatureStore
     @StateObject private var renderer = PreviewRenderer()
     let onBack: () -> Void
     let onSave: () -> Void
@@ -128,7 +129,12 @@ struct FilterView: View {
             }
         }
         .background(Color(red: 0.06, green: 0.075, blue: 0.07).ignoresSafeArea())
-        .onAppear { if let p = page { renderer.render(p) } }
+        .onAppear {
+            if let p = page {
+                shownPageId = p.id
+                renderer.render(p)
+            }
+        }
         .onChange(of: page) { p in
             guard let p = p else { return }
             if p.id != shownPageId {
@@ -151,6 +157,7 @@ struct FilterView: View {
                     }
                     markup = nil
                 } onCancel: { markup = nil }
+                .environmentObject(signatures)
             }
         }
         .overlay { if preparing { ProgressOverlay(message: "Đang chuẩn bị…") } }
@@ -174,6 +181,7 @@ struct FilterView: View {
                     .background(Color.brand, in: Capsule()).foregroundColor(.white)
             }
             .disabled(session.saving || session.pages.isEmpty)
+            .accessibilityIdentifier("filter.save")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -225,6 +233,10 @@ struct FilterView: View {
                         .frame(width: 72)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(f.label)
+                    .accessibilityAddTraits(page.filter == f ? AccessibilityTraits([.isButton, .isSelected]) : AccessibilityTraits.isButton)
+                    .accessibilityIdentifier("filter.\(f.rawValue)")
                 }
             }
             .padding(.horizontal, 12)
@@ -276,14 +288,14 @@ struct FilterView: View {
     private func toolbar(_ page: DraftPage) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 4) {
-                tool("Bộ lọc", "wand.and.stars", on: panel == .filters) { panel = .filters }
-                tool("Tinh chỉnh", "slider.horizontal.3", on: panel == .adjust) { panel = .adjust }
-                tool("Làm thẳng", "level", on: panel == .straighten) { panel = .straighten }
-                tool("Xoay", "rotate.right", on: false) { session.rotate(index, by: 90) }
-                tool("Vẽ", "pencil.tip", on: false) { openMarkup(.pen, page) }
-                tool("Ký tên", "signature", on: false) { openMarkup(.sign, page) }
-                tool("Thêm chữ", "textformat", on: false) { openMarkup(.text, page) }
-                tool("Xóa trang", "trash", on: false) { session.remove(index) }
+                tool("Bộ lọc", "wand.and.stars", on: panel == .filters, id: "filter.panel.filters") { panel = .filters }
+                tool("Tinh chỉnh", "slider.horizontal.3", on: panel == .adjust, id: "filter.panel.adjust") { panel = .adjust }
+                tool("Làm thẳng", "level", on: panel == .straighten, id: "filter.panel.straighten") { panel = .straighten }
+                tool("Xoay", "rotate.right", on: false, id: "filter.rotate") { session.rotate(index, by: 90) }
+                tool("Vẽ", "pencil.tip", on: false, id: "filter.pen") { openMarkup(.pen, page) }
+                tool("Ký tên", "signature", on: false, id: "filter.sign") { openMarkup(.sign, page) }
+                tool("Thêm chữ", "textformat", on: false, id: "filter.text") { openMarkup(.text, page) }
+                tool("Xóa trang", "trash", on: false, id: "filter.delete") { session.remove(index) }
             }
             .padding(.horizontal, 8)
         }
@@ -291,7 +303,7 @@ struct FilterView: View {
         .background(Color(red: 0.09, green: 0.11, blue: 0.105))
     }
 
-    private func tool(_ title: String, _ icon: String, on: Bool, action: @escaping () -> Void) -> some View {
+    private func tool(_ title: String, _ icon: String, on: Bool, id: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             VStack(spacing: 3) {
                 Image(systemName: icon).font(.system(size: 18))
@@ -300,6 +312,8 @@ struct FilterView: View {
             .foregroundColor(on ? .brand : .white)
             .frame(width: 72)
         }
+        .accessibilityLabel(title)
+        .accessibilityIdentifier(id)
     }
 
     // MARK: actions

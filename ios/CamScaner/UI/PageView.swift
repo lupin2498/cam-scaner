@@ -53,19 +53,19 @@ struct PageView: View {
 
     private var toolbar: some View {
         HStack {
-            tool("Cắt lại", "crop") {
+            tool("Cắt lại", "crop", id: "page.crop") {
                 if let p = current {
                     session.editExisting(docId: docId, pageId: p.id)
                     flow = .edit(docId: docId, pageId: p.id, filterStep: false)
                 }
             }
-            tool("Bộ lọc", "wand.and.stars") {
+            tool("Bộ lọc", "wand.and.stars", id: "page.filter") {
                 if let p = current {
                     session.editExisting(docId: docId, pageId: p.id)
                     flow = .edit(docId: docId, pageId: p.id, filterStep: true)
                 }
             }
-            tool("Xoay", "rotate.right") {
+            tool("Xoay", "rotate.right", id: "page.rotate") {
                 guard let p = current, !busy else { return }
                 busy = true
                 Task {
@@ -73,15 +73,15 @@ struct PageView: View {
                     busy = false
                 }
             }
-            tool("Nhận dạng chữ", "text.viewfinder") { showOcr = true }
-            tool("Xóa", "trash") { confirmDelete = true }
+            tool("Nhận dạng chữ", "text.viewfinder", id: "page.ocr") { showOcr = true }
+            tool("Xóa", "trash", id: "page.delete") { confirmDelete = true }
         }
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity)
         .background(Color(red: 0.09, green: 0.11, blue: 0.105))
     }
 
-    private func tool(_ title: String, _ icon: String, action: @escaping () -> Void) -> some View {
+    private func tool(_ title: String, _ icon: String, id: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             VStack(spacing: 3) {
                 Image(systemName: icon)
@@ -90,6 +90,8 @@ struct PageView: View {
             .foregroundColor(.white)
             .frame(maxWidth: .infinity)
         }
+        .accessibilityLabel(title)
+        .accessibilityIdentifier(id)
     }
 }
 

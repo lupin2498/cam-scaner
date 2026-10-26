@@ -13,12 +13,14 @@ struct ShareSheet: UIViewControllerRepresentable {
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
-/// Picks one or several photos from the library.
+/// Picks one or several photos from the library. The sheet closes at once; the photos are handed
+/// over when loaded (an empty list when the user cancels).
 struct PhotoPicker: UIViewControllerRepresentable {
     let limit: Int
     let onPicked: ([UIImage]) -> Void
+    @Environment(\.dismiss) private var dismiss
 
-    func makeCoordinator() -> Coordinator { Coordinator(onPicked: onPicked) }
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
 
     func makeUIViewController(context: Context) -> PHPickerViewController {
         var config = PHPickerConfiguration(photoLibrary: .shared())
@@ -29,25 +31,31 @@ struct PhotoPicker: UIViewControllerRepresentable {
         return picker
     }
 
-    func updateUIViewController(_ uiViewController: PHPickerViewController, context: Context) {}
+    func updateUIViewController(_ uiViewController: PHPickerViewController, context: Context) {
+        context.coordinator.parent = self
+    }
 
     final class Coordinator: NSObject, PHPickerViewControllerDelegate {
-        let onPicked: ([UIImage]) -> Void
-        init(onPicked: @escaping ([UIImage]) -> Void) { self.onPicked = onPicked }
+        var parent: PhotoPicker
+        init(_ parent: PhotoPicker) { self.parent = parent }
 
         func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
-            picker.dismiss(animated: true)
+            // SwiftUI closes its own sheet, so the binding that shows it stays in step
+            parent.dismiss()
+            let onPicked = parent.onPicked
             guard !results.isEmpty else { return }
             let group = DispatchGroup()
             var images = [UIImage?](repeating: nil, count: results.count)
             for (i, r) in results.enumerated() where r.itemProvider.canLoadObject(ofClass: UIImage.self) {
                 group.enter()
                 r.itemProvider.loadObject(ofClass: UIImage.self) { object, _ in
-                    images[i] = object as? UIImage
-                    group.leave()
+                    DispatchQueue.main.async {
+                        images[i] = object as? UIImage
+                        group.leave()
+                    }
                 }
             }
-            group.notify(queue: .main) { self.onPicked(images.compactMap { $0 }) }
+            group.notify(queue: .main) { onPicked(images.compactMap { $0 }) }
         }
     }
 }
@@ -168,6 +176,7 @@ struct ChipRow<T: Hashable>: View {
 struct Chip: View {
     let text: String
     let selected: Bool
+    var id: String? = nil
     let action: () -> Void
 
     var body: some View {
@@ -180,6 +189,8 @@ struct Chip: View {
                 .foregroundColor(selected ? .white : .primary)
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier(id ?? "chip.\(text)")
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 
@@ -196,9 +207,9 @@ struct TextInputSheet: View {
         NavigationView {
             Form {
                 if multiline {
-                    TextEditor(text: $text).frame(minHeight: 140)
+                    TextEditor(text: $text).frame(minHeight: 140).accessibilityIdentifier("input.field")
                 } else {
-                    TextField(placeholder, text: $text)
+                    TextField(placeholder, text: $text).accessibilityIdentifier("input.field")
                 }
             }
             .navigationTitle(title)
@@ -206,10 +217,91 @@ struct TextInputSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Hủy") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Xong") { onDone(text); dismiss() }.disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    Button("Xong") { onDone(text); dismiss() }
+                        .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .accessibilityIdentifier("input.done")
                 }
             }
         }
+    }
+}
+
+/// Holds back what should follow a sheet (opening the scan flow, another sheet, a message) until
+/// the sheet has fully gone, so the next presentation does not collide with the one leaving.
+final class AfterSheetQueue: ObservableObject {
+    var onScreen = false
+    private var pending: [() -> Void] = []
+
+    func run(_ action: @escaping () -> Void) {
+        guard onScreen else { return action() }
+        pending.append(action)
+        // in case the sheet's dismissal is never reported
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in self?.flush() }
+    }
+
+    func sheetGone() {
+        onScreen = false
+        flush()
+    }
+
+    private func flush() {
+        let actions = pending
+        pending = []
+        actions.forEach { $0() }
+    }
+}
+
+struct DeferredSheet<Sheet: View>: ViewModifier {
+    @Binding var isPresented: Bool
+    let sheet: (_ then: @escaping (@escaping () -> Void) -> Void) -> Sheet
+    @StateObject private var queue = AfterSheetQueue()
+
+    func body(content: Content) -> some View {
+        content.sheet(isPresented: $isPresented, onDismiss: { queue.sheetGone() }) {
+            sheet { action in queue.run(action) }
+                .onAppear { queue.onScreen = true }
+        }
+    }
+}
+
+/// Short message shown over the bottom of the screen for a moment; unlike an alert it never
+/// competes with sheets being presented or dismissed.
+struct Toast: ViewModifier {
+    @Binding var message: String?
+
+    func body(content: Content) -> some View {
+        content.overlay(alignment: .bottom) {
+            if let m = message {
+                Text(m)
+                    .font(.subheadline)
+                    .multilineTextAlignment(.center)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(Color.black.opacity(0.8), in: Capsule())
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 96)
+                    .transition(.opacity)
+                    .accessibilityIdentifier("toast")
+                    .onTapGesture { message = nil }
+                    .task(id: m) {
+                        try? await Task.sleep(nanoseconds: 2_800_000_000)
+                        if message == m { withAnimation { message = nil } }
+                    }
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: message)
+    }
+}
+
+extension View {
+    /// A sheet whose content can run follow-up actions once it has gone: `then { ... }`.
+    func deferredSheet<S: View>(isPresented: Binding<Bool>, @ViewBuilder content: @escaping (_ then: @escaping (@escaping () -> Void) -> Void) -> S) -> some View {
+        modifier(DeferredSheet(isPresented: isPresented, sheet: content))
+    }
+
+    func toast(_ message: Binding<String?>) -> some View {
+        modifier(Toast(message: message))
     }
 }
 

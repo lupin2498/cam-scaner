@@ -14,6 +14,7 @@ struct OcrView: View {
     @State private var error: String?
     @State private var share = false
     @State private var translate = false
+    @State private var recognised = ""
 
     var body: some View {
         Group {
@@ -29,6 +30,7 @@ struct OcrView: View {
             } else {
                 VStack {
                     TextEditor(text: $text).padding(8).background(Color(UIColor.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+                        .accessibilityIdentifier("ocr.text")
                     HStack(spacing: 12) {
                         Button {
                             UIPasteboard.general.string = text
@@ -49,11 +51,16 @@ struct OcrView: View {
         .sheet(isPresented: $share) { ShareSheet(items: [text]) }
         .modifier(TranslationModifier(isPresented: $translate, text: text))
         .task { await recognize() }
+        .onDisappear {
+            // corrections typed by the user are kept for search and text exports
+            if !running && error == nil && text != recognised { repository.setOcrText(docId, pageId, text) }
+        }
     }
 
     private func recognize() async {
         if let stored = repository.get(docId)?.pages.first(where: { $0.id == pageId })?.ocrText {
             text = stored
+            recognised = stored
             running = false
             return
         }
@@ -64,6 +71,7 @@ struct OcrView: View {
         }
         do {
             text = try await OCR.recognize(image.scaledDown(maxDim: 2400)).text
+            recognised = text
             repository.setOcrText(docId, pageId, text)
         } catch {
             self.error = error.localizedDescription
