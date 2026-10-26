@@ -4,6 +4,8 @@ name: Tooling cache (temporary)
 # Android SDK and the Gradle dependency cache this project needs and publishes them as a
 # prerelease, so a sandboxed machine can build offline. "cleanup" removes that prerelease again.
 on:
+  push:
+    paths: ['.github/workflows/tooling-cache.yml']
   workflow_dispatch:
     inputs:
       action:
@@ -12,12 +14,13 @@ on:
         options: [publish, cleanup]
         default: publish
 
+
 permissions:
   contents: write
 
 jobs:
   publish:
-    if: inputs.action == 'publish'
+    if: ${{ !contains(github.event.head_commit.message, '[tooling-cleanup]') && (github.event_name != 'workflow_dispatch' || inputs.action == 'publish') }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -57,7 +60,7 @@ jobs:
           gh release upload tooling-cache sdk.tar.gz gradle-modules.tar.gz --clobber
 
   cleanup:
-    if: inputs.action == 'cleanup'
+    if: ${{ contains(github.event.head_commit.message, '[tooling-cleanup]') || (github.event_name == 'workflow_dispatch' && inputs.action == 'cleanup') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
