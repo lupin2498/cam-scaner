@@ -51,9 +51,9 @@ class PaperFitTest {
         val c = h.map(0.5, 0.5)
         assertTrue(lineDistance(c, q.tl, q.br) < 1e-4f)
         assertTrue(lineDistance(c, q.tr, q.bl) < 1e-4f)
-        // a parallelogram is mapped affinely
+        // a parallelogram is mapped affinely: its centre is the mean of its corners
         val p = Corners(Pt(0.2f, 0.1f), Pt(0.8f, 0.2f), Pt(0.7f, 0.9f), Pt(0.1f, 0.8f))
-        assertPt(Pt(0.5f, 0.5f), Homography.squareTo(p).map(0.5, 0.5))
+        assertPt(Pt(0.45f, 0.5f), Homography.squareTo(p).map(0.5, 0.5))
     }
 
     @Test
@@ -161,8 +161,10 @@ class PaperFitTest {
 
     @Test
     fun ratioFollowsTheOrientationOfTheRegion() {
-        assertEquals(1 / sqrt(2.0), PaperPreset.A4.ratioFor(0.7), 1e-6)
-        assertEquals(sqrt(2.0), PaperPreset.A4.ratioFor(1.4), 1e-6)
+        // real sheets are rounded to millimetres, so A4 is 210:297 rather than exactly 1:√2
+        assertEquals(210.0 / 297.0, PaperPreset.A4.ratioFor(0.7), 1e-6)
+        assertEquals(297.0 / 210.0, PaperPreset.A4.ratioFor(1.4), 1e-6)
+        assertEquals(1 / sqrt(2.0), PaperPreset.A4.ratio, 1e-4)
         assertEquals(53.98 / 85.6, PaperPreset.ID_CARD.ratio, 1e-6)
         assertEquals(595.28f, PaperPreset.A4.widthPt, 0.05f)
         assertEquals(841.89f, PaperPreset.A4.heightPt, 0.05f)

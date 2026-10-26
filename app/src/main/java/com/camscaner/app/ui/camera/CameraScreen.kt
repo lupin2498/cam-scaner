@@ -16,6 +16,7 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.FocusMeteringAction
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
@@ -32,6 +33,9 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -45,6 +49,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -68,11 +73,13 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -82,6 +89,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
@@ -101,15 +109,26 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import coil.compose.AsyncImage
 import com.camscaner.app.R
+import com.camscaner.app.scanner.Corners
 import com.camscaner.app.scanner.PaperFit
 import com.camscaner.app.scanner.PaperPreset
+import com.camscaner.app.scanner.Pt
 import com.camscaner.app.scannerApp
 import com.camscaner.app.ui.ScanSessionViewModel
 import com.camscaner.app.ui.components.ConfirmDialog
 import com.camscaner.app.ui.components.LightSystemBarIcons
+import com.google.mlkit.vision.barcode.BarcodeScanning
+import com.google.mlkit.vision.barcode.common.Barcode
+import com.google.mlkit.vision.common.InputImage
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.Locale
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import kotlin.math.min
 
 @Composable
@@ -199,16 +218,22 @@ private fun CameraContent(session: ScanSessionViewModel, onClose: () -> Unit, on
     val settings = context.scannerApp.settings
     val scope = rememberCoroutineScope()
     val primary = MaterialTheme.colorScheme.primary
+    val mode = session.cameraMode
+    val currentMode by rememberUpdatedState(mode)
 
     // every analysed frame must reach the tracker; results carry a frame number so equal
     // detections still restart the effect below
     var detection by remember { mutableStateOf<FrameDetection?>(null) }
+    var barcode by remember { mutableStateOf<Barcode?>(null) }
     var flash by remember { mutableStateOf(FlashState.OFF) }
     var capturing by remember { mutableStateOf(false) }
     var holdProgress by remember { mutableFloatStateOf(0f) }
     var cameraRef by remember { mutableStateOf<Camera?>(null) }
     var cameraFailed by remember { mutableStateOf(false) }
     var pickerOpen by remember { mutableStateOf(false) }
+    var zoomRatio by remember { mutableFloatStateOf(1f) }
+    var focusPoint by remember { mutableStateOf<Offset?>(null) }
+    var scanningImage by remember { mutableStateOf(false) }
     val flashOverlay = remember { Animatable(0f) }
     val tracker = remember { StabilityTracker() }
 
@@ -231,6 +256,11 @@ private fun CameraContent(session: ScanSessionViewModel, onClose: () -> Unit, on
             .build()
     }
     val analyzerExecutor = remember { Executors.newSingleThreadExecutor() }
+    val analyzer = remember {
+        ModeAnalyzer(mode = { currentMode }, onDetection = { detection = it }, onBarcode = { barcode = it })
+    }
+    // a code being shown is not read again meanwhile
+    SideEffect { analyzer.barcodes.enabled = barcode == null && !pickerOpen && !scanningImage }
 
     DisposableEffect(lifecycleOwner) {
         val future = ProcessCameraProvider.getInstance(context)
@@ -253,12 +283,13 @@ private fun CameraContent(session: ScanSessionViewModel, onClose: () -> Unit, on
                 .setResolutionSelector(
                     ResolutionSelector.Builder()
                         .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
-                        .setResolutionStrategy(ResolutionStrategy(Size(640, 480), ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER))
+                        // enough for small barcodes; the sheet detector downsizes anyway
+                        .setResolutionStrategy(ResolutionStrategy(Size(1280, 960), ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER))
                         .build()
                 )
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 .build()
-            analysis.setAnalyzer(analyzerExecutor, DocumentAnalyzer { detection = it })
+            analysis.setAnalyzer(analyzerExecutor, analyzer)
             try {
                 p.unbindAll()
                 // tablets and Chromebooks may only have a front camera
@@ -276,7 +307,10 @@ private fun CameraContent(session: ScanSessionViewModel, onClose: () -> Unit, on
         }
     }
     DisposableEffect(Unit) {
-        onDispose { analyzerExecutor.shutdown() }
+        onDispose {
+            analyzerExecutor.shutdown()
+            analyzer.close()
+        }
     }
     // the torch goes off when the app is backgrounded; keep the flash icon in sync with it
     DisposableEffect(cameraRef) {
@@ -290,7 +324,7 @@ private fun CameraContent(session: ScanSessionViewModel, onClose: () -> Unit, on
 
     fun capture() {
         // takePicture fails with "Not bound to a valid Camera" until binding has finished
-        if (capturing || cameraRef == null) return
+        if (capturing || cameraRef == null || mode == CameraMode.QR) return
         capturing = true
         // the next auto-capture needs a new page, whether this shot was manual or automatic
         tracker.disarm()
@@ -305,6 +339,7 @@ private fun CameraContent(session: ScanSessionViewModel, onClose: () -> Unit, on
             FlashState.ON -> ImageCapture.FLASH_MODE_ON
             else -> ImageCapture.FLASH_MODE_OFF
         }
+        val shotMode = mode
         imageCapture.takePicture(
             ImageCapture.OutputFileOptions.Builder(file).build(),
             ContextCompat.getMainExecutor(context),
@@ -312,7 +347,7 @@ private fun CameraContent(session: ScanSessionViewModel, onClose: () -> Unit, on
                 override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
                     Log.i(TAG, "Photo saved (${file.length()} bytes)")
                     // a single shot opens the crop screen through the navigation once processed
-                    val job = session.addCapture(file, single = !settings.batchMode)
+                    val job = session.addCapture(file, single = !settings.batchMode, mode = shotMode)
                     scope.launch {
                         job.join()
                         capturing = false
@@ -334,20 +369,60 @@ private fun CameraContent(session: ScanSessionViewModel, onClose: () -> Unit, on
         // not behind the photo picker, the discard dialog or an import: the user is busy with those
         val visible = lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
         val blocked = paused || pickerOpen || session.importing || !visible
-        if (settings.autoCapture && progress >= 1f && !capturing && !blocked) {
+        if (settings.autoCapture && mode.detects && progress >= 1f && !capturing && !blocked) {
             capture()
+        }
+    }
+
+    val noCodeInImage = stringResource(R.string.qr_none_in_image)
+    fun scanImage(uri: Uri) {
+        scanningImage = true
+        scope.launch {
+            val found = try {
+                withContext(Dispatchers.IO) {
+                    BarcodeScanning.getClient().process(InputImage.fromFilePath(context, uri)).await()
+                        .firstOrNull { !it.rawValue.isNullOrEmpty() }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Scanning the picked image failed", e)
+                null
+            } finally {
+                scanningImage = false
+            }
+            if (found != null) barcode = found else Toast.makeText(context, noCodeInImage, Toast.LENGTH_SHORT).show()
         }
     }
 
     val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(50)) { uris ->
         pickerOpen = false
-        // the navigation opens the crop screen once the import is done
-        if (uris.isNotEmpty()) session.importImages(uris)
+        if (uris.isEmpty()) return@rememberLauncherForActivityResult
+        // in QR mode the picked image is read for codes; otherwise the navigation opens the crop
+        // screen once the import is done
+        if (currentMode == CameraMode.QR) scanImage(uris.first()) else session.importImages(uris)
+    }
+
+    fun focusAt(position: Offset) {
+        val camera = cameraRef ?: return
+        val point = previewView.meteringPointFactory.createPoint(position.x, position.y)
+        val action = FocusMeteringAction.Builder(point, FocusMeteringAction.FLAG_AF or FocusMeteringAction.FLAG_AE)
+            .setAutoCancelDuration(4, TimeUnit.SECONDS)
+            .build()
+        runCatching { camera.cameraControl.startFocusAndMetering(action) }
+        focusPoint = position
+        scope.launch {
+            delay(900)
+            if (focusPoint == position) focusPoint = null
+        }
     }
 
     // paper format new photos are cut to: a guide frame on the preview, and the region of that
     // format inside the detected sheet is outlined instead of the sheet itself
-    val paper = settings.cameraPaper
+    val paper = when (mode) {
+        CameraMode.ID_CARD -> PaperPreset.ID_CARD
+        CameraMode.DOCUMENT -> settings.cameraPaper
+        else -> null
+    }
+    val newPages = session.pages.count { it.existingPageId == null }
 
     Box(Modifier.fillMaxSize()) {
         AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
@@ -360,6 +435,24 @@ private fun CameraContent(session: ScanSessionViewModel, onClose: () -> Unit, on
             )
         }
 
+        // pinch to zoom, tap to focus
+        Box(
+            Modifier
+                .fillMaxSize()
+                .pointerInput(cameraRef) {
+                    detectTransformGestures { _, _, zoom, _ ->
+                        val camera = cameraRef ?: return@detectTransformGestures
+                        val state = camera.cameraInfo.zoomState.value ?: return@detectTransformGestures
+                        val ratio = (zoomRatio * zoom).coerceIn(state.minZoomRatio, state.maxZoomRatio)
+                        zoomRatio = ratio
+                        camera.cameraControl.setZoomRatio(ratio)
+                    }
+                }
+                .pointerInput(cameraRef) {
+                    detectTapGestures(onTap = { focusAt(it) })
+                }
+        )
+
         Canvas(Modifier.fillMaxSize()) {
             val d = detection
             val frameW = d?.frameWidth?.toFloat() ?: 3f
@@ -369,7 +462,7 @@ private fun CameraContent(session: ScanSessionViewModel, onClose: () -> Unit, on
             val dh = frameH * scale
             val left = (size.width - dw) / 2f
             val top = (size.height - dh) / 2f
-            if (settings.showGrid) {
+            if (settings.showGrid && mode != CameraMode.QR) {
                 for (k in 1..2) {
                     val x = left + dw * k / 3f
                     val y = top + dh * k / 3f
@@ -377,32 +470,51 @@ private fun CameraContent(session: ScanSessionViewModel, onClose: () -> Unit, on
                     drawLine(Color.White.copy(alpha = 0.35f), Offset(left, y), Offset(left + dw, y), 1.dp.toPx())
                 }
             }
-            if (paper != null) {
-                val g = PaperFit.guide(paper, dw, dh)
-                val gp = g.points.map { Offset(left + it.x * dw, top + it.y * dh) }
-                val guidePath = Path().apply {
-                    moveTo(gp[0].x, gp[0].y)
-                    for (i in 1 until 4) lineTo(gp[i].x, gp[i].y)
+            fun outline(c: Corners): Path {
+                val pts = c.points.map { Offset(left + it.x * dw, top + it.y * dh) }
+                return Path().apply {
+                    moveTo(pts[0].x, pts[0].y)
+                    for (i in 1 until 4) lineTo(pts[i].x, pts[i].y)
                     close()
                 }
-                drawPath(
-                    guidePath, Color.White.copy(alpha = 0.85f),
-                    style = Stroke(width = 2.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(14.dp.toPx(), 8.dp.toPx()))),
-                )
             }
+            val dashed = Stroke(width = 2.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(14.dp.toPx(), 8.dp.toPx())))
+            if (paper != null) {
+                drawPath(outline(PaperFit.guide(paper, dw, dh)), Color.White.copy(alpha = 0.85f), style = dashed)
+            }
+            if (mode == CameraMode.QR) {
+                // a square window for the code
+                val side = min(dw, dh) * 0.6f
+                val l = (size.width - side) / 2f
+                val t = (size.height - side) / 2f
+                val arm = side * 0.12f
+                val w = 4.dp.toPx()
+                val c = Color.White
+                for ((cx, sx) in listOf(l to 1f, l + side to -1f)) {
+                    for ((cy, sy) in listOf(t to 1f, t + side to -1f)) {
+                        drawLine(c, Offset(cx, cy), Offset(cx + sx * arm, cy), w)
+                        drawLine(c, Offset(cx, cy), Offset(cx, cy + sy * arm), w)
+                    }
+                }
+            }
+            focusPoint?.let { p ->
+                drawCircle(Color.White, 28.dp.toPx(), p, style = Stroke(2.dp.toPx()))
+            }
+            if (!mode.detects) return@Canvas
             val frame = d ?: return@Canvas
             val found = frame.corners ?: return@Canvas
             val corners = if (paper != null) PaperFit.fit(found, paper, frame.frameWidth, frame.frameHeight) else found
             val pts = corners.points.map { Offset(left + it.x * dw, top + it.y * dh) }
-            val path = Path().apply {
-                moveTo(pts[0].x, pts[0].y)
-                for (i in 1 until 4) lineTo(pts[i].x, pts[i].y)
-                close()
-            }
+            val path = outline(corners)
             val color = if (holdProgress > 0f) Color(0xFF3DDC97) else primary
             drawPath(path, color.copy(alpha = 0.22f))
             drawPath(path, color, style = Stroke(width = 3.dp.toPx()))
             pts.forEach { drawCircle(Color.White, 5.dp.toPx(), it) }
+            if (mode == CameraMode.BOOK) {
+                // the spread is divided here
+                fun mid(a: Pt, b: Pt) = Offset(left + (a.x + b.x) / 2f * dw, top + (a.y + b.y) / 2f * dh)
+                drawLine(color, mid(corners.tl, corners.tr), mid(corners.bl, corners.br), 2.dp.toPx(), pathEffect = dashed.pathEffect)
+            }
         }
 
         Box(Modifier.fillMaxSize().background(Color.White.copy(alpha = flashOverlay.value)))
@@ -426,11 +538,13 @@ private fun CameraContent(session: ScanSessionViewModel, onClose: () -> Unit, on
                 }
                 Icon(icon, stringResource(R.string.camera_flash), tint = Color.White)
             }
-            IconButton(onClick = { settings.autoCapture = !settings.autoCapture }) {
-                Icon(
-                    Icons.Filled.AutoMode, stringResource(R.string.camera_auto_capture),
-                    tint = if (settings.autoCapture) primary else Color.White,
-                )
+            if (mode.detects) {
+                IconButton(onClick = { settings.autoCapture = !settings.autoCapture }) {
+                    Icon(
+                        Icons.Filled.AutoMode, stringResource(R.string.camera_auto_capture),
+                        tint = if (settings.autoCapture) primary else Color.White,
+                    )
+                }
             }
             IconButton(onClick = { settings.showGrid = !settings.showGrid }) {
                 Icon(Icons.Filled.GridOn, stringResource(R.string.camera_grid), tint = if (settings.showGrid) primary else Color.White)
@@ -438,9 +552,14 @@ private fun CameraContent(session: ScanSessionViewModel, onClose: () -> Unit, on
         }
 
         // Hint
+        val found = detection?.corners != null
         val hint = when {
-            detection?.corners == null && paper != null -> stringResource(R.string.camera_hint_paper, stringResource(paper.label))
-            detection?.corners == null -> stringResource(R.string.camera_hint_searching)
+            mode == CameraMode.QR -> stringResource(R.string.camera_hint_qr)
+            mode == CameraMode.PHOTO -> stringResource(R.string.camera_hint_photo)
+            !found && mode == CameraMode.ID_CARD -> stringResource(if (newPages % 2 == 0) R.string.camera_hint_id_front else R.string.camera_hint_id_back)
+            !found && mode == CameraMode.BOOK -> stringResource(R.string.camera_hint_book)
+            !found && paper != null -> stringResource(R.string.camera_hint_paper, stringResource(paper.label))
+            !found -> stringResource(R.string.camera_hint_searching)
             holdProgress > 0f && settings.autoCapture -> stringResource(R.string.camera_hint_hold)
             else -> stringResource(R.string.camera_hint_found)
         }
@@ -457,6 +576,13 @@ private fun CameraContent(session: ScanSessionViewModel, onClose: () -> Unit, on
             )
         }
 
+        if (mode.detects) {
+            LevelIndicator(
+                Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top = 112.dp, end = 12.dp)
+                    .semantics { contentDescription = levelLabel(context) },
+            )
+        }
+
         // Bottom controls
         Column(
             Modifier.align(Alignment.BottomCenter).fillMaxWidth()
@@ -464,10 +590,35 @@ private fun CameraContent(session: ScanSessionViewModel, onClose: () -> Unit, on
                 .navigationBarsPadding().padding(bottom = 16.dp, top = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ModeChip(stringResource(R.string.camera_mode_single), !settings.batchMode) { settings.batchMode = false }
-                ModeChip(stringResource(R.string.camera_mode_batch), settings.batchMode) { settings.batchMode = true }
-                PaperMenuChip(paper) { settings.cameraPaper = it }
+            if (zoomRatio > 1.05f) {
+                Text(
+                    String.format(Locale.US, "%.1fx", zoomRatio),
+                    color = Color.White,
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.padding(bottom = 4.dp),
+                )
+            }
+            Row(
+                Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                CameraMode.entries.forEach { m ->
+                    ModeChip(stringResource(m.label), mode == m) {
+                        if (session.cameraMode != m) {
+                            session.cameraMode = m
+                            detection = null
+                            holdProgress = 0f
+                        }
+                    }
+                }
+            }
+            if (mode == CameraMode.DOCUMENT || mode == CameraMode.PHOTO) {
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ModeChip(stringResource(R.string.camera_mode_single), !settings.batchMode) { settings.batchMode = false }
+                    ModeChip(stringResource(R.string.camera_mode_batch), settings.batchMode) { settings.batchMode = true }
+                    if (mode == CameraMode.DOCUMENT) PaperMenuChip(settings.cameraPaper) { settings.cameraPaper = it }
+                }
             }
             Spacer(Modifier.height(12.dp))
             Row(
@@ -482,16 +633,27 @@ private fun CameraContent(session: ScanSessionViewModel, onClose: () -> Unit, on
                     },
                     modifier = Modifier.size(56.dp),
                 ) {
-                    Icon(Icons.Filled.PhotoLibrary, stringResource(R.string.home_import), tint = Color.White, modifier = Modifier.size(30.dp))
+                    Icon(
+                        Icons.Filled.PhotoLibrary,
+                        stringResource(if (mode == CameraMode.QR) R.string.qr_scan_image else R.string.home_import),
+                        tint = Color.White, modifier = Modifier.size(30.dp),
+                    )
                 }
-                ShutterButton(
-                    label = stringResource(R.string.camera_capture),
-                    progress = if (settings.autoCapture) holdProgress else 0f,
-                    busy = capturing,
-                    enabled = cameraRef != null,
-                ) { capture() }
+                if (mode == CameraMode.QR) {
+                    Box(Modifier.size(84.dp), contentAlignment = Alignment.Center) {
+                        if (scanningImage) CircularProgressIndicator(Modifier.size(36.dp), color = Color.White, strokeWidth = 3.dp)
+                    }
+                } else {
+                    ShutterButton(
+                        label = stringResource(R.string.camera_capture),
+                        progress = if (settings.autoCapture && mode.detects) holdProgress else 0f,
+                        busy = capturing,
+                        enabled = cameraRef != null,
+                    ) { capture() }
+                }
                 val last = session.pages.lastOrNull()
-                if (settings.batchMode && last != null) {
+                val collecting = mode.collects || (settings.batchMode && mode != CameraMode.QR)
+                if (collecting && last != null) {
                     Box(
                         Modifier.size(56.dp).clip(RoundedCornerShape(8.dp))
                             .border(2.dp, Color.White, RoundedCornerShape(8.dp))
@@ -515,7 +677,11 @@ private fun CameraContent(session: ScanSessionViewModel, onClose: () -> Unit, on
             CircularProgressIndicator(Modifier.align(Alignment.Center))
         }
     }
+
+    barcode?.let { code -> BarcodeDialog(code, onDismiss = { barcode = null }) }
 }
+
+private fun levelLabel(context: Context) = context.getString(R.string.camera_level)
 
 @Composable
 private fun ModeChip(label: String, selected: Boolean, onClick: () -> Unit) {

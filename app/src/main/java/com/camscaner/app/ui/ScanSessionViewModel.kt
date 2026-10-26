@@ -23,6 +23,9 @@ import com.camscaner.app.scanner.DocumentDetector
 import com.camscaner.app.scanner.ImageIO
 import com.camscaner.app.scanner.PaperFit
 import com.camscaner.app.scanner.PaperPreset
+import com.camscaner.app.scanner.ScanFilter
+import com.camscaner.app.scanner.rotated
+import com.camscaner.app.ui.camera.CameraMode
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -66,6 +69,9 @@ class ScanSessionViewModel(app: Application, private val state: SavedStateHandle
     var currentIndex by mutableIntStateOf(0)
     var importing by mutableStateOf(false)
         private set
+
+    /** What the camera is shooting; kept here so the pages taken keep their meaning across screens. */
+    var cameraMode by mutableStateOf(CameraMode.DOCUMENT)
     var saveProgress by mutableStateOf<Pair<Int, Int>?>(null)
         private set
 
@@ -106,6 +112,7 @@ class ScanSessionViewModel(app: Application, private val state: SavedStateHandle
     fun start(docId: String?, returnRoute: String? = null) {
         generation++
         clear()
+        cameraMode = CameraMode.DOCUMENT
         // a result nobody picked up (the filter screen left early) must not leak into this scan
         savedDocId = null
         saveError = null
@@ -131,44 +138,68 @@ class ScanSessionViewModel(app: Application, private val state: SavedStateHandle
     }
 
     /**
-     * Normalizes a captured/imported photo, detects the sheet and appends it to the session,
-     * unless the scan of generation [gen] has been abandoned meanwhile.
+     * Normalizes a captured/imported photo, detects the sheet and appends it to the session as
+     * one page (or two for a book spread), unless the scan of generation [gen] has been abandoned
+     * meanwhile. Returns false when the photo could not be used.
      */
-    private suspend fun addPhoto(raw: File, gen: Int): DraftPage? = withContext(Dispatchers.Default) {
-        val out = File(workDir, "${DocumentRepository.newId()}.jpg")
-        val size = runCatching { ImageIO.normalize(raw, out) }.getOrNull()
-        raw.delete()
-        if (size == null) {
-            out.delete()
-            return@withContext null
+    private suspend fun addPhoto(raw: File, gen: Int, mode: CameraMode = CameraMode.DOCUMENT, fromCamera: Boolean = false): Boolean =
+        withContext(Dispatchers.Default) {
+            val out = File(workDir, "${DocumentRepository.newId()}.jpg")
+            val size = runCatching { ImageIO.normalize(raw, out) }.getOrNull()
+            raw.delete()
+            if (size == null) {
+                out.delete()
+                return@withContext false
+            }
+            val (w, h) = size
+            val drafts: List<DraftPage> = when (mode) {
+                CameraMode.PHOTO -> listOf(
+                    DraftPage(
+                        id = DocumentRepository.newId(), originalFile = out, width = w, height = h,
+                        detected = null, corners = null, filter = ScanFilter.ORIGINAL, skew = 0f,
+                    )
+                )
+                CameraMode.BOOK -> {
+                    val spread = if (settings.autoCrop) detect(out) else null
+                    val (left, right) = PaperFit.split(spread)
+                    listOf(left, right).map { half ->
+                        DraftPage(
+                            id = DocumentRepository.newId(), originalFile = out, width = w, height = h,
+                            detected = spread, corners = half, filter = settings.defaultFilter,
+                            skew = if (settings.autoStraighten) null else 0f,
+                        )
+                    }
+                }
+                else -> {
+                    val detected = if (settings.autoCrop) detect(out) else null
+                    // ID cards are always cut to the card; other photos to the format chosen in the camera
+                    val paper = when {
+                        mode == CameraMode.ID_CARD -> PaperPreset.ID_CARD
+                        fromCamera -> settings.cameraPaper
+                        else -> null
+                    }
+                    listOf(
+                        DraftPage(
+                            id = DocumentRepository.newId(), originalFile = out, width = w, height = h,
+                            detected = detected,
+                            corners = if (paper != null) PaperFit.fit(detected, paper, w, h) else detected,
+                            filter = settings.defaultFilter,
+                            skew = if (settings.autoStraighten) null else 0f,
+                            paper = paper,
+                        )
+                    )
+                }
+            }
+            val added = withContext(Dispatchers.Main) {
+                if (gen != generation) return@withContext false
+                pages += drafts
+                currentIndex = pages.lastIndex
+                if (mode != CameraMode.PHOTO) drafts.forEach { alignLater(it, gen) }
+                true
+            }
+            if (!added) out.delete()
+            added
         }
-        val detected = if (settings.autoCrop) detect(out) else null
-        // with a paper format chosen in the camera, the region of that format inside the sheet
-        val paper = settings.cameraPaper
-        val draft = DraftPage(
-            id = DocumentRepository.newId(),
-            originalFile = out,
-            width = size.first,
-            height = size.second,
-            detected = detected,
-            corners = if (paper != null) PaperFit.fit(detected, paper, size.first, size.second) else detected,
-            filter = settings.defaultFilter,
-            skew = if (settings.autoStraighten) null else 0f,
-            paper = paper,
-        )
-        val added = withContext(Dispatchers.Main) {
-            if (gen != generation) return@withContext false
-            pages += draft
-            currentIndex = pages.lastIndex
-            alignLater(draft, gen)
-            true
-        }
-        if (!added) {
-            out.delete()
-            return@withContext null
-        }
-        draft
-    }
 
     /**
      * Imports [uris] independently of the calling screen, so a configuration change cannot cut it
@@ -187,15 +218,22 @@ class ScanSessionViewModel(app: Application, private val state: SavedStateHandle
     }
 
     /**
-     * Adds a photo taken by the camera. Runs in the ViewModel so leaving the camera meanwhile does not
-     * lose it; a single capture replaces the session and then opens the crop screen.
+     * Adds a photo taken by the camera in [mode]. Runs in the ViewModel so leaving the camera
+     * meanwhile does not lose it. A single capture replaces the session and then opens the crop
+     * screen; the second side of an ID card opens it too.
      */
-    fun addCapture(file: File, single: Boolean): Job {
+    fun addCapture(file: File, single: Boolean, mode: CameraMode = cameraMode): Job {
         val gen = generation
-        if (single) clear()
+        if (single && !mode.collects) clear()
         return viewModelScope.launch {
-            addPhoto(file, gen)
-            if (single && gen == generation && pages.isNotEmpty()) cropReady = true
+            addPhoto(file, gen, mode, fromCamera = true)
+            if (gen != generation || pages.isEmpty()) return@launch
+            val done = when {
+                mode == CameraMode.ID_CARD -> pages.count { it.existingPageId == null } >= 2
+                mode == CameraMode.BOOK -> false
+                else -> single
+            }
+            if (done) cropReady = true
         }
     }
 
@@ -213,7 +251,7 @@ class ScanSessionViewModel(app: Application, private val state: SavedStateHandle
                     runCatching { ImageIO.copyUri(scannerApp, uri, tmp) }.isSuccess
                 }
                 if (!copied) tmp.delete()
-                else if (addPhoto(tmp, gen) != null) imported++
+                else if (addPhoto(tmp, gen)) imported++
             }
             currentIndex = 0
         } finally {
@@ -277,8 +315,25 @@ class ScanSessionViewModel(app: Application, private val state: SavedStateHandle
     fun remove(index: Int) {
         if (index !in pages.indices) return
         val removed = pages.removeAt(index)
-        if (removed.existingPageId == null) removed.originalFile.delete()
+        // the two halves of a book spread share one photo
+        val shared = pages.any { it.originalFile.absolutePath == removed.originalFile.absolutePath }
+        if (removed.existingPageId == null && !shared) removed.originalFile.delete()
         currentIndex = currentIndex.coerceAtMost(pages.lastIndex).coerceAtLeast(0)
+    }
+
+    /**
+     * Splits page [index] (a photographed book spread) into its left and right halves as shown,
+     * two pages sharing the photo. The second half becomes a new page; marks are dropped since
+     * they no longer fit either half.
+     */
+    fun split(index: Int) {
+        val p = pages.getOrNull(index) ?: return
+        val (a, b) = PaperFit.split(p.corners ?: p.detected)
+        // which half is on the left of the page as the user sees it (the photo may be turned)
+        val (first, second) = if (a.rotated(p.rotation).tl.x <= b.rotated(p.rotation).tl.x) a to b else b to a
+        pages[index] = p.copy(corners = first, marks = emptyList())
+        pages.add(index + 1, p.copy(id = DocumentRepository.newId(), corners = second, marks = emptyList(), existingPageId = null))
+        currentIndex = index
     }
 
     /** Background alignment of new pages, one at a time (OCR is heavy), by page id. */

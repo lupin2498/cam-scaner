@@ -32,8 +32,9 @@ jobs:
           java-version: 17
 
       # no setup-gradle here: a plain ~/.gradle, so the tar holds every module the build resolves
+      # failures do not matter here: the dependencies are resolved either way
       - name: Resolve and build everything once
-        run: ./gradlew --no-daemon -PwithX86 testDebugUnitTest assembleDebug assembleRelease assembleDebugAndroidTest
+        run: ./gradlew --no-daemon --continue -PwithX86 testDebugUnitTest assembleDebug assembleRelease assembleDebugAndroidTest || echo "build failed; packing what was resolved"
 
       - name: Pack SDK and Gradle modules
         run: |

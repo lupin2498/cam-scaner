@@ -53,6 +53,33 @@
     <string name="camera_capture_failed">Chụp ảnh thất bại</string>
     <string name="camera_paper">Khổ giấy</string>
     <string name="camera_hint_paper">Đặt tài liệu vào khung %1$s</string>
+    <string name="camera_mode_document">Tài liệu</string>
+    <string name="camera_mode_id_card">Thẻ CCCD</string>
+    <string name="camera_mode_book">Sách</string>
+    <string name="camera_mode_qr">Mã QR</string>
+    <string name="camera_mode_photo">Ảnh</string>
+    <string name="camera_hint_id_front">Chụp mặt trước thẻ</string>
+    <string name="camera_hint_id_back">Chụp mặt sau thẻ</string>
+    <string name="camera_hint_book">Chụp cả hai trang sách, ứng dụng sẽ tách đôi</string>
+    <string name="camera_hint_qr">Đưa mã QR hoặc mã vạch vào khung hình</string>
+    <string name="camera_hint_photo">Chụp ảnh, không cắt và không lọc</string>
+    <string name="camera_level">Cân bằng máy</string>
+    <string name="camera_zoom">Thu phóng %1$.1fx</string>
+    <string name="qr_result_title">Đã quét được mã</string>
+    <string name="qr_type_url">Liên kết</string>
+    <string name="qr_type_wifi">Wi-Fi</string>
+    <string name="qr_type_contact">Danh bạ</string>
+    <string name="qr_type_phone">Số điện thoại</string>
+    <string name="qr_type_email">Email</string>
+    <string name="qr_type_text">Văn bản</string>
+    <string name="qr_type_product">Mã sản phẩm</string>
+    <string name="qr_open">Mở</string>
+    <string name="qr_search">Tìm kiếm</string>
+    <string name="qr_copied">Đã sao chép nội dung mã</string>
+    <string name="qr_wifi_detail">Mạng: %1$s\nMật khẩu: %2$s</string>
+    <string name="qr_scan_image">Quét mã từ ảnh</string>
+    <string name="qr_none_in_image">Không tìm thấy mã trong ảnh</string>
+    <string name="qr_scanning">Đang quét mã…</string>
 
     <!-- Cắt ảnh -->
     <string name="crop_title">Cắt</string>
@@ -65,6 +92,8 @@
     <string name="crop_page_of">Cắt %1$d/%2$d</string>
     <string name="crop_delete_page">Bỏ trang</string>
     <string name="crop_paper">Khổ giấy</string>
+    <string name="crop_split">Chia đôi</string>
+    <string name="crop_split_done">Đã tách trang thành hai trang</string>
     <string name="crop_paper_fitted">Đã chọn vùng theo khổ %1$s</string>
     <string name="crop_paper_free">Vùng cắt tự do</string>
 

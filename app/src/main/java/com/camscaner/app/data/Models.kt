@@ -61,7 +61,7 @@ data class ScanPage(
                     strength = o.optDouble("strength", 1.0).toFloat(),
                 ),
                 marks = MarkStroke.listFromJson(o.optJSONArray("marks")),
-                paper = PaperPreset.fromName(o.optString("paper", null)),
+                paper = if (o.has("paper")) PaperPreset.fromName(o.optString("paper")) else null,
                 // pages saved before straightening existed keep their look
                 skew = if (o.optBoolean("skewAuto", false)) null else o.optDouble("skew", 0.0).toFloat(),
                 width = o.optInt("width", 0),

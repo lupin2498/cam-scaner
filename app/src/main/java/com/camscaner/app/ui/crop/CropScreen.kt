@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.Rotate90DegreesCcw
 import androidx.compose.material.icons.filled.Rotate90DegreesCw
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.VerticalSplit
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -99,6 +100,7 @@ fun CropScreen(session: ScanSessionViewModel, onBack: () -> Unit, onNext: () -> 
         }
     }
     val invalidMessage = stringResource(R.string.crop_invalid)
+    val splitMessage = stringResource(R.string.crop_split_done)
     fun next() {
         val bad = pages.indexOfFirst { it.corners != null && !it.corners.isValid() }
         if (bad >= 0) {
@@ -226,6 +228,11 @@ fun CropScreen(session: ScanSessionViewModel, onBack: () -> Unit, onNext: () -> 
                     ToolButton(Icons.Filled.Fullscreen, stringResource(R.string.crop_full)) {
                         session.update(index) { it.copy(corners = null) }
                     }
+                }
+                // a photographed book spread becomes its two pages
+                ToolButton(Icons.Filled.VerticalSplit, stringResource(R.string.crop_split)) {
+                    session.split(index)
+                    scope.launch { snackbar.showSnackbar(splitMessage) }
                 }
                 ToolButton(Icons.AutoMirrored.Filled.ArrowForward, stringResource(R.string.next), onClick = ::next)
             }
