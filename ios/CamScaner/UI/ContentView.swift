@@ -35,11 +35,11 @@ struct ContentView: View {
             .environmentObject(session)
         }
         .onChange(of: session.pendingImport) { pending in
-            // files handed over by another app open the crop step
-            if pending && flow == nil {
-                session.pendingImport = false
-                flow = .imported(targetDocId: session.targetDocId)
-            }
+            // files handed over by another app open the crop step; an import started from a screen
+            // of the app has already opened its flow
+            guard pending else { return }
+            session.pendingImport = false
+            if flow == nil { flow = .imported(targetDocId: session.targetDocId) }
         }
     }
 }
